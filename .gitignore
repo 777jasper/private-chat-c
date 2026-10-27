@@ -1,0 +1,49 @@
+# ---- Project folders we never save ----
+deps/
+build/
+data/
+
+# ---- Swap, backup and editor temp files ----
+*.swp
+*.swo
+*.swn
+.*.swp
+*~
+*.bak
+*.orig
+*.save
+\#*\#
+.\#*
+.vscode/
+.idea/
+
+# ---- Cache and compiled output ----
+.cache/
+*.o
+*.a
+*.so
+*.so.*
+*.out
+*.d
+
+# ---- Database files (user data, password hashes, ciphertext) ----
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ---- Secrets and keys ----
+.env
+.env.*
+*.key
+*.pem
+*.secret
+secrets/
+
+# ---- Logs, core dumps, debugger files ----
+*.log
+core.*
+vgcore.*
+.gdb_history
