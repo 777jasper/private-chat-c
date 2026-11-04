@@ -7,4 +7,7 @@ int db_init(const char *path);
 /* Close the database. */
 void db_close(void);
 
+/* Adds a user. Returns 0 on success, 1 if the username is taken, -1 on any other error. */
+int db_add_user(const char *username, const char *pw_hash);
+
 #endif

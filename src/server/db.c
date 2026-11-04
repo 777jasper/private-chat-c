@@ -48,4 +48,38 @@ void db_close(void){
 	}
 }
 
+int db_add_user(const char *username, const char *pw_hash){
 
+	if(db==NULL)
+		return -1;
+	const char *sql = "INSERT INTO users (username, pw_hash) VALUES (?, ?); ";
+	sqlite3_stmt *stmt = NULL;
+
+	/* compile the SQL. */
+	int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+	if(rc!=SQLITE_OK){
+		fprintf(stderr,"db: prepare failed: %s\n", sqlite3_errmsg(db));
+		return -1;
+	}
+
+	/* fill in the two placeholders. */
+	sqlite3_bind_text(stmt, 1, username, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(stmt, 2, pw_hash, -1, SQLITE_TRANSIENT);
+
+	/* run */
+	rc = sqlite3_step(stmt);
+
+	/* decide the results before finalizing */
+	int result;
+	if(rc == SQLITE_DONE)
+		result =  0;
+	else if(rc == SQLITE_CONSTRAINT)
+		result =  1;
+	else{
+		fprintf(stderr, "db: insert failed: %s\n", sqlite3_errmsg(db));
+		result = -1;
+	}
+
+	sqlite3_finalize(stmt);
+	return result;
+}
