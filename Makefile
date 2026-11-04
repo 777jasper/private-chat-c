@@ -33,4 +33,4 @@ clean:
 clean-all: 
 	rm -f $(BUILD)/server $(BUILD)/*.o
 
-.PHONY: all clean sqlite
+.PHONY: all clean clean-all sqlite
