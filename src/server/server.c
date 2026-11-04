@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include "net_io.h"
 #include "protocol.h"
+#include "db.h"
 
 #define PORT 5555
 #define BACKLOG 16
@@ -49,6 +50,13 @@ static void *client_thread(void *arg){
 
 int main(void){
 
+	/* open the database. */
+	if(db_init("data/chat.db") == -1){
+		fprintf(stderr, "server: database setup failed\n");
+		return 1;
+	}
+
+
 	int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if(listen_fd < 0){
 		perror("socket");
@@ -89,7 +97,7 @@ int main(void){
 			}
 		}
 
-		int *arg = malloc(sizeof(*arg));
+		int *arg = malloc(sizeof *arg);
 		if(arg == NULL){
 			close(client_fd);
 			continue;
@@ -110,7 +118,8 @@ int main(void){
 		pthread_detach(tid);
 	}
 
-	close(listen_fd);
+	close(listen_fd); // close listen_fd
+	db_close(); // close the database
 	return 0;
 }
 
