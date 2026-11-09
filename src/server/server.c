@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+#include <stdint.h>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -9,9 +11,89 @@
 #include "net_io.h"
 #include "protocol.h"
 #include "db.h"
+#include "auth.h"
 
 #define PORT 5555
 #define BACKLOG 16
+
+#define USERNAME_MIN 3
+#define USERNAME_MAX 32
+#define PASSWORD_MIN 8
+#define PASSWORD_MAX 128
+
+/* Splits a register payload ("username 00 password 00") into two strings.
+   On success returns 0 and points *username and *password INSIDE payload
+   (they are only valid until payload is freed). Returns -1 if malformed. */
+static int parse_credentials(const uint8_t *payload, uint32_t len,const char **username, const char **password){
+
+	/* payload must end with a 00 byte.*/
+	if(len == 0 || payload[len-1] != 0)
+		return -1;
+	/* the first 00 byte (the end of the username). */
+	const uint8_t *sep = memchr(payload, 0, len);
+
+	if(sep == NULL)
+		return -1;
+	/* the first 00 is also the last byte, so there is no password part. */
+	if(sep == payload + len -1)
+		return -1;
+
+	size_t u_len = sep - payload;
+	size_t p_len = len - u_len -2;
+
+	/* check length of username, password. */
+	if(u_len < USERNAME_MIN || u_len > USERNAME_MAX || p_len < PASSWORD_MIN || p_len > PASSWORD_MAX)
+		return -1;
+
+	/* the password must not contains another 00 byte. */
+	if(memchr(sep+1,0,p_len) != NULL)
+		return -1;
+
+	/* check every username character. */
+	for(size_t i = 0; i<u_len; i++){
+		unsigned char c = payload[i];
+		if(!isalnum(c) && c!='_')
+			return -1;
+	}
+
+	/* return username, password */
+	*username = (const char *)payload;
+	*password = (const char *)(sep + 1);
+	return 0;
+}
+
+/* Sends a short text reply (MSG_OK or MSG_ERROR) to the client.
+   Returns 0 on success, -1 if sending failed. */
+static int send_text(int fd, uint8_t type, const char *text){
+	
+	int result = send_frame(fd, type, (const uint8_t *)text, strlen(text));
+	return result;
+}
+
+/* Handles one MSG_REGISTER frame. Returns 0 if a reply was sent
+   (even an error reply), -1 if the connection is broken. */
+static int handle_register(int fd, const uint8_t *payload, uint32_t len){
+	const char *username;
+    	const char *password;
+
+    	if(parse_credentials(payload, len, &username, &password) == -1)
+	    	return send_text(fd, MSG_ERROR, "invalid username or password");
+
+    	char hash[AUTH_HASH_SIZE];
+	
+	if(auth_hash_password(password, hash, sizeof hash) == -1)
+		return send_text(fd, MSG_ERROR, "server error");
+	
+	int rc = db_add_user(username, hash);
+	
+	if(rc == 0)
+		return send_text(fd, MSG_OK, "registered");
+	
+	if(rc == 1)
+		return send_text(fd, MSG_ERROR, "username unavailable");
+	
+	return send_text(fd, MSG_ERROR, "server error");
+}
 
 /* serves one client until it disconnects */
 static void handle_client(int client_fd){
@@ -26,7 +108,16 @@ static void handle_client(int client_fd){
 			break;
 		}
 
-		int rc = send_frame(client_fd, type, payload, len);
+		int rc;
+		switch(type){
+			case MSG_REGISTER: rc = handle_register(client_fd, payload, len);
+					   break;
+			default:
+					   rc = send_text(client_fd, MSG_ERROR, "unsupported request");
+					   break;
+		}
+
+
 		free(payload);
 		if(rc==-1){
 			
@@ -55,6 +146,13 @@ int main(void){
 		fprintf(stderr, "server: database setup failed\n");
 		return 1;
 	}
+
+	if(auth_init() == -1){
+		fprintf(stderr, "server: crypto setup failed\n");
+		db_close();
+		return 1;
+	}
+
 
 
 	int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
