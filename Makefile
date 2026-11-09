@@ -1,12 +1,18 @@
 CC	= gcc
 CFLAGS	= -Wall -Wextra -g -pthread -Isrc/common
 LDFLAGS	= -pthread
-LDLIBS	= -ldl -lm
+SODIUM_CFLAGS := $(shell pkg-config --cflags libsodium)
+SODIUM_LIBS := $(shell pkg-config --libs libsodium)
+
+
+
+LDLIBS	= -ldl -lm $(SODIUM_LIBS)
+
 
 
 BUILD	= build
 
-SERVER_OBJS = $(BUILD)/server.o $(BUILD)/net_io.o $(BUILD)/db.o
+SERVER_OBJS = $(BUILD)/server.o $(BUILD)/net_io.o $(BUILD)/db.o $(BUILD)/auth.o
 
 SQLITE_DIR = deps/sqlite/sqlite-amalgamation-3540100
 SQLITE_OBJ = $(BUILD)/sqlite3.o
@@ -25,6 +31,10 @@ $(BUILD)/net_io.o: src/common/net_io.c src/common/net_io.h src/common/protocol.h
 
 $(BUILD)/db.o: src/server/db.c src/server/db.h $(SQLITE_DIR)/sqlite3.h
 	$(CC) $(CFLAGS) -I$(SQLITE_DIR) -c $< -o $@
+
+$(BUILD)/auth.o: src/server/auth.c src/server/auth.h
+	$(CC) $(CFLAGS) $(SODIUM_CFLAGS) -c $< -o $@
+
 
 $(SQLITE_OBJ): $(SQLITE_DIR)/sqlite3.c $(SQLITE_DIR)/sqlite3.h
 	$(CC) -O2 -pthread -DSQLITE_THREADSAFE=1 -c $< -o $@
