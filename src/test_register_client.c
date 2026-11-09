@@ -11,13 +11,25 @@
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3) {
+    if (argc != 4) {
         fprintf(stderr, "usage: %s username password\n", argv[0]);
         return 1;
     }
 
-    const char *username = argv[1];
-    const char *password = argv[2];
+    const char *command = argv[1];
+    const char *username = argv[2];
+    const char *password = argv[3];
+
+    /* pick the message type from the command. */
+    uint8_t msg_type;
+    if(strcmp(command, "register") == 0)
+	    msg_type = MSG_REGISTER;
+    else if(strcmp(command, "login") == 0)
+	    msg_type = MSG_LOGIN;
+    else{
+	    fprintf(stderr, "unknown command: %s\n", command);
+	    return 1;
+    }
 
     size_t u_len = strlen(username);
     size_t p_len = strlen(password);
@@ -63,7 +75,7 @@ int main(int argc, char *argv[])
 
 
     /* send the frame. */
-    int rc = send_frame(fd, MSG_REGISTER, payload, (uint32_t)total);
+    int rc = send_frame(fd, msg_type, payload, (uint32_t)total);
     free(payload);
     if(rc == -1){
 	    printf("send_frame: failed\n");

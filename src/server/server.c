@@ -21,6 +21,12 @@
 #define PASSWORD_MIN 8
 #define PASSWORD_MAX 128
 
+typedef struct{
+	int logged_in; /* 0 = no, 1 = yes */
+	char username[USERNAME_MAX+1]; /* valid only when logged_in is 1 */
+}session_t;
+
+
 /* Splits a register payload ("username 00 password 00") into two strings.
    On success returns 0 and points *username and *password INSIDE payload
    (they are only valid until payload is freed). Returns -1 if malformed. */
@@ -95,8 +101,48 @@ static int handle_register(int fd, const uint8_t *payload, uint32_t len){
 	return send_text(fd, MSG_ERROR, "server error");
 }
 
+/* Handles on MSG_LOGIN frame. Returns 0 if a reply was send, -1 if the connection is broken. */
+static int handle_login(int fd, const uint8_t *payload, uint32_t len, session_t *sess){
+
+	if(sess->logged_in != 0)
+		return send_text(fd, MSG_ERROR, "already logged in");
+
+	const char *username;
+	const char *password;
+
+	if(parse_credentials(payload, len, &username, &password) == -1)
+		return send_text(fd, MSG_ERROR, "invalid username or password");
+
+	char hash[AUTH_HASH_SIZE];
+	int ok = 0;
+
+	int rc = db_get_hash(username, hash, sizeof hash);
+
+	if(rc == 0){
+		ok = (auth_verify_password(hash, password) == 0);
+	}
+	else if(rc == 1){
+		auth_dummy_verify(password);
+	}
+	else{
+		return send_text(fd, MSG_ERROR, "server error");
+	}
+
+	if(!ok)
+		return send_text(fd, MSG_ERROR, "invalid username or password");
+
+	snprintf(sess->username, sizeof sess->username, "%s", username);
+	sess->logged_in = 1;
+
+	return send_text(fd, MSG_OK, "logged in");
+}
+
+
+
 /* serves one client until it disconnects */
 static void handle_client(int client_fd){
+
+	session_t sess = {0};
 
 	for(;;){
 		uint8_t type;
@@ -112,6 +158,9 @@ static void handle_client(int client_fd){
 		switch(type){
 			case MSG_REGISTER: rc = handle_register(client_fd, payload, len);
 					   break;
+			
+			case MSG_LOGIN: rc = handle_login(client_fd, payload, len, &sess);
+					break;			
 			default:
 					   rc = send_text(client_fd, MSG_ERROR, "unsupported request");
 					   break;

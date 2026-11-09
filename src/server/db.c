@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "sqlite3.h"
 #include "db.h"
 
@@ -77,6 +78,48 @@ int db_add_user(const char *username, const char *pw_hash){
 		result =  1;
 	else{
 		fprintf(stderr, "db: insert failed: %s\n", sqlite3_errmsg(db));
+		result = -1;
+	}
+
+	sqlite3_finalize(stmt);
+	return result;
+}
+
+int db_get_hash(const char *username, char *out, size_t out_size){
+
+	if(db == NULL)
+		return -1;
+
+	const char *sql = "SELECT pw_hash FROM users WHERE username = ?;";
+	sqlite3_stmt *stmt = NULL;
+
+	/* Compile the SQL. */
+	int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+	if(rc!=SQLITE_OK){
+		fprintf(stderr,"db: prepare failed: %s\n", sqlite3_errmsg(db));
+		return -1;
+	}
+
+	/* bind the username to placeholder. */
+	sqlite3_bind_text(stmt, 1, username, -1, SQLITE_TRANSIENT);
+
+	rc = sqlite3_step(stmt);
+	int result;
+	if(rc == SQLITE_ROW){
+		const unsigned char *text = sqlite3_column_text(stmt,0);
+		if(text == NULL || strlen((const char *)text)>=out_size){
+			result = -1;
+		}
+		else{
+			memcpy(out, text, strlen((const char *)text)+1);
+			result = 0;
+		}
+	}
+	else if(rc == SQLITE_DONE){
+		result = 1;
+	}
+	else{
+		fprintf(stderr, "db: lookup failed: %s\n", sqlite3_errmsg(db));
 		result = -1;
 	}
 
