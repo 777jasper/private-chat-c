@@ -12,7 +12,7 @@ LDLIBS	= -ldl -lm $(SODIUM_LIBS)
 
 BUILD	= build
 
-SERVER_OBJS = $(BUILD)/server.o $(BUILD)/net_io.o $(BUILD)/db.o $(BUILD)/auth.o $(BUILD)/registry.o
+SERVER_OBJS = $(BUILD)/server.o $(BUILD)/net_io.o $(BUILD)/db.o $(BUILD)/auth.o $(BUILD)/registry.o $(BUILD)/conn.o
 
 SQLITE_DIR = deps/sqlite/sqlite-amalgamation-3540100
 SQLITE_OBJ = $(BUILD)/sqlite3.o
@@ -38,6 +38,8 @@ $(BUILD)/auth.o: src/server/auth.c src/server/auth.h
 $(BUILD)/registry.o: src/server/registry.c src/server/registry.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILD)/conn.o: src/server/conn.c src/server/conn.h src/common/net_io.h src/common/protocol.h
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(SQLITE_OBJ): $(SQLITE_DIR)/sqlite3.c $(SQLITE_DIR)/sqlite3.h
 	$(CC) -O2 -pthread -DSQLITE_THREADSAFE=1 -c $< -o $@
