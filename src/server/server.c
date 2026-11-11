@@ -211,6 +211,37 @@ static int handle_set_key(conn_t *c, const uint8_t *payload, uint32_t len, const
 	return send_text(c, MSG_ERROR, "server error");
 }
 
+/* Handles one MSG_GET_KEY frame (payload = a username, no 00). Returns 0 if a reply was sent, -1 if the connection is broken. */
+static int handle_get_key(conn_t *c, const uint8_t *payload, uint32_t len, const session_t *sess){
+	if(!sess->logged_in)
+		return send_text(c, MSG_ERROR, "not logged in");
+
+	if(len < USERNAME_MIN || len > USERNAME_MAX)
+		return send_text(c, MSG_ERROR, "invalid username");
+
+	for(size_t i = 0; i<len; i++){
+		unsigned char ch = payload[i];
+		if(!isalnum(ch) && ch!='_')
+			return send_text(c, MSG_ERROR, "invalid username");
+	}
+	/* copy the name into a terminated string */
+	char name[USERNAME_MAX + 1];
+	memcpy(name, payload, len);
+	name[len] = '\0';
+
+	unsigned char key[DB_PUBKEY_SIZE];
+	int rc = db_get_pubkey(name, key);
+	if(rc == 1)
+		return send_text(c, MSG_ERROR, "no key available");
+	if(rc == -1)
+		return send_text(c, MSG_ERROR, "server error");
+
+	/* build the "username 00 key" in a stack buffer */
+	uint8_t out[USERNAME_MAX + 1 + DB_PUBKEY_SIZE];
+	memcpy(out, name, len + 1); /* includes the 00 */
+	memcpy(out + len + 1, key, DB_PUBKEY_SIZE);
+	return conn_send(c, MSG_KEY, out, (uint32_t)(len + 1 + DB_PUBKEY_SIZE));
+}
 
 /* serves one client until it disconnects */
 static void handle_client(conn_t *c){
@@ -238,9 +269,10 @@ static void handle_client(conn_t *c){
 					break;
 			case MSG_SET_KEY: rc = handle_set_key(c, payload, len, &sess);
 					  break;
-			default:
-					   rc = send_text(c, MSG_ERROR, "unsupported request");
-					   break;
+			case MSG_GET_KEY: rc = handle_get_key(c, payload, len, &sess);
+					  break;
+			default:	rc = send_text(c, MSG_ERROR, "unsupported request");
+					break;
 		}
 
 
