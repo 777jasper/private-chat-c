@@ -23,7 +23,7 @@ all: $(BUILD)/server
 $(BUILD)/server: $(SERVER_OBJS) $(SQLITE_OBJ)
 	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
-$(BUILD)/server.o: src/server/server.c src/common/net_io.h src/common/protocol.h src/server/db.h src/server/auth.h src/server/conn.h
+$(BUILD)/server.o: src/server/server.c src/common/net_io.h src/common/protocol.h src/server/db.h src/server/auth.h src/server/conn.h src/server/registry.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/net_io.o: src/common/net_io.c src/common/net_io.h src/common/protocol.h

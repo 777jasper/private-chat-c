@@ -13,7 +13,7 @@
 #include "db.h"
 #include "auth.h"
 #include "conn.h"
-
+#include "registry.h"
 
 #define PORT 5555
 #define BACKLOG 16
@@ -131,6 +131,12 @@ static int handle_login(conn_t *c, const uint8_t *payload, uint32_t len, session
 
 	if(!ok)
 		return send_text(c, MSG_ERROR, "invalid username or password");
+	
+	int added = registry_add(username, c);
+	if(added == 1)
+		return send_text(c, MSG_ERROR, "already logged in");
+	if(added == -1)
+		return send_text(c, MSG_ERROR, "server error");
 
 	snprintf(sess->username, sizeof sess->username, "%s", username);
 	sess->logged_in = 1;
@@ -189,6 +195,7 @@ static void *client_thread(void *arg){
 		return NULL;
 	}
 	handle_client(c);
+	registry_remove(c);
 	conn_shutdown(c); /* closes the socket exactly once. */
 	conn_unref(c); /* drops our reference; frees c at zero. */
 	return NULL;
