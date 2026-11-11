@@ -198,6 +198,20 @@ static int handle_send(conn_t *c, const uint8_t *payload, uint32_t len, const se
 	return send_text(c, MSG_ERROR, "recipient unavailable");
 }
 
+/* Handles one MSG_SET_KEY frame. Returns 0 if a reply was sent, -1 if the connection is broken. */
+static int handle_set_key(conn_t *c, const uint8_t *payload, uint32_t len, const session_t *sess){
+
+	if(!sess->logged_in)
+		return send_text(c, MSG_ERROR, "not logged in");
+	if(len != DB_PUBKEY_SIZE)
+		return send_text(c, MSG_ERROR, "invalid key");
+	int rc = db_set_pubkey(sess->username, payload);
+	if(rc == 0)
+		return send_text(c, MSG_OK, "key saved");
+	return send_text(c, MSG_ERROR, "server error");
+}
+
+
 /* serves one client until it disconnects */
 static void handle_client(conn_t *c){
 
@@ -222,6 +236,8 @@ static void handle_client(conn_t *c){
 					break;
 			case MSG_SEND:	rc = handle_send(c, payload, len, &sess);
 					break;
+			case MSG_SET_KEY: rc = handle_set_key(c, payload, len, &sess);
+					  break;
 			default:
 					   rc = send_text(c, MSG_ERROR, "unsupported request");
 					   break;
