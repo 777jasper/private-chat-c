@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include "net_io.h"
 #include "protocol.h"
+#include <poll.h>
+#include <errno.h>
 
 #define PORT      5555
 #define USER_BUF  64
@@ -79,6 +81,102 @@ static int connect_server(void)
 	}
 
 	return fd;
+}
+
+/* Handles one frame from the server. Returns 0 to keep going, -1 if the connection is gone. */
+static int handle_incoming(int fd)
+{
+	uint8_t type;
+	uint8_t *payload;
+	uint32_t len;
+
+	if(recv_frame(fd, &type, &payload, &len) == -1){
+		printf("server closed the connection\n");
+		return -1;
+	}
+
+	if(type == MSG_DELIVER){
+		const uint8_t *sep = (len > 0) ? memchr(payload, 0, len) : NULL;
+		if(sep == NULL)
+			printf("malformed delivery\n");
+		else{
+			size_t body_len = len - (size_t)(sep - payload) - 1;
+			printf("from %s: %.*s\n", (const char *)payload, (int)body_len, (const char*)(sep + 1));
+		}
+	}
+	else if(type == MSG_OK || type == MSG_ERROR){
+		printf("[server] %.*s\n", (int)len, payload ? (char *)payload : "");
+	}
+	free(payload);
+	return 0;
+}
+
+/* Handles one typed line "recipient message". Returns 0 to keep going, 1 to quit, -1 if sending failed. */
+static int handle_typed(int fd, char *line){
+	if(strcmp(line, "/quit") == 0)
+		return 1;
+
+	char *sp = strchr(line, ' ');
+	if(sp == NULL || sp == line || sp[1] == '\0'){
+		printf("usage: recipient message (or /quit)\n");
+		return 0;
+	}
+	size_t r_len = (size_t)(sp - line);
+	const char *body = sp + 1;
+	size_t body_len = strlen(body);
+
+	/* build "recipient 00 body" (no final 00 after the body) */
+	size_t total = r_len + 1 + body_len;
+	uint8_t *buf = malloc(total);
+	if(buf == NULL)
+		return -1;
+	memcpy(buf, line, r_len);
+	buf[r_len] = 0;
+	memcpy(buf + r_len + 1, body, body_len);
+
+	int rc = send_frame(fd, MSG_SEND, buf, (uint32_t)total);
+	free(buf);
+	return (rc == 0) ? 0 : -1;
+}
+
+/* Runs until the user quits or the connection is lost */
+static int chat_loop(int fd){
+	printf("Logged in. Type: recipient message (or /quit)\n");
+
+	struct pollfd fds[2];
+	fds[0].fd = 0;
+	fds[0].events = POLLIN;
+	fds[1].fd = fd;
+	fds[1].events = POLLIN;
+
+	for(;;){
+		int n = poll(fds, 2, -1);
+		if(n<0){
+			if(errno == EINTR)
+				continue;
+			perror("poll");
+			return -1;
+		}
+
+		if(fds[1].revents & (POLLIN | POLLHUP | POLLERR)){
+			if(handle_incoming(fd) == -1)
+				return 0;
+		}
+
+		if(fds[0].revents & (POLLIN | POLLHUP)){
+			char line[1024];
+
+			if(read_line("", line,sizeof line) == -1)
+				return 0; /* CTRL+D: leave */
+			int r = handle_typed(fd, line);
+			if(r==1)
+				return 0; /* /quit */
+			if(r==-1){
+				printf("send failed\n");
+				return -1;
+			}
+		}
+	}
 }
 
 int main(void)
@@ -163,6 +261,11 @@ int main(void)
     /* print it, clean up, and report success or failure */
     printf("%.*s\n", (int)reply_len, reply ? (char *)reply: "");
     free(reply);
+    if(type == MSG_OK && msg_type == MSG_LOGIN){
+	    int chat_rc = chat_loop(fd);
+	    close(fd);
+	    return (chat_rc == 0) ? 0 : 1;
+    }
     close(fd);
     return (type == MSG_OK) ? 0 : 1;
 }
