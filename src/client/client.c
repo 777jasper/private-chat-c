@@ -9,6 +9,7 @@
 #include "protocol.h"
 #include <poll.h>
 #include <errno.h>
+#include "keys.h"
 
 #define PORT      5555
 #define USER_BUF  64
@@ -262,6 +263,28 @@ int main(void)
     printf("%.*s\n", (int)reply_len, reply ? (char *)reply: "");
     free(reply);
     if(type == MSG_OK && msg_type == MSG_LOGIN){
+	    /* start the libsodium and load (or create) this user's keys */
+	    if(sodium_init() < 0){
+		    fprintf(stderr,"libsodium failed to initialize\n");
+		    close(fd);
+		    return 1;
+	    }
+	    unsigned char pk[crypto_box_PUBLICKEYBYTES];
+	    unsigned char sk[crypto_box_SECRETKEYBYTES];
+	    if(keys_load_or_create(username, pk, sk) == -1){
+		    close(fd);
+		    return 1;
+	    }
+
+	    /* upload the public key and wipe the secret key */
+	    int krc = send_frame(fd, MSG_SET_KEY, pk, sizeof pk);
+	    sodium_memzero(sk, sizeof sk);
+	    if(krc == -1){
+		    fprintf(stderr, "could not send key\n");
+		    close(fd);
+		    return 1;
+	    }
+
 	    int chat_rc = chat_loop(fd);
 	    close(fd);
 	    return (chat_rc == 0) ? 0 : 1;
