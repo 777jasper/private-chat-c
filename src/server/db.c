@@ -157,3 +157,47 @@ int db_set_pubkey(const char *username, const unsigned char *key){
 	sqlite3_finalize(stmt);
 	return result;
 }
+
+int db_get_pubkey(const char *username, unsigned char *out){
+	if(db == NULL)
+		return -1;
+
+	const char *sql = "SELECT pubkey FROM users WHERE username = ?; ";
+	sqlite3_stmt *stmt = NULL;
+
+	/* Compile the SQL. */
+        int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+        if(rc!=SQLITE_OK){
+                fprintf(stderr,"db: prepare failed: %s\n", sqlite3_errmsg(db));
+                return -1;
+        }
+
+	/* bind the username to palceholder 1 */
+	sqlite3_bind_text(stmt, 1, username, -1, SQLITE_TRANSIENT);
+
+	rc = sqlite3_step(stmt);
+	int result;
+	if(rc == SQLITE_ROW){
+		if(sqlite3_column_type(stmt, 0) == SQLITE_NULL)
+			result = 1; /* no key uploaded yet. */
+		else{
+			const void *blob = sqlite3_column_blob(stmt, 0);
+			int n = sqlite3_column_bytes(stmt,0);
+			if(blob == NULL || n!= DB_PUBKEY_SIZE)
+				result = -1;
+			else{
+				memcpy(out, blob, DB_PUBKEY_SIZE);
+				result = 0;
+			}
+		}
+	}
+	else if(rc == SQLITE_DONE)
+		result = 1;
+	else{
+		fprintf(stderr, "db: key lookup failed: %s\n", sqlite3_errmsg(db));
+		result = -1;
+	}
+	sqlite3_finalize(stmt);
+	return result;
+}
+

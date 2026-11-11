@@ -14,9 +14,13 @@ void db_close(void);
 /* Adds a user. Returns 0 on success, 1 if the username is taken, -1 on any other error. */
 int db_add_user(const char *username, const char *pw_hash);
 
-/* Copies the user's stored hash into out. Returns 0 if found, 1 if there is no such user, -1 0n error. */
+/* Copies the user's stored hash into out. Returns 0 if found, 1 if there is no such user, -1 on error. */
 int db_get_hash(const char *username, char *out, size_t out_size);
 
 /* Stores the user's public key (DB_PUBKEY_SIZE bytes). Return 0 on success, 1 if no such user, -1 on error. */
 int db_set_pubkey(const char *username, const unsigned char *key);
+
+/* Copies the user's public key (DB_PUBKEY_SIZE bytes) into out. Returns 0 if found, 1 if there is no such user or no key yet, -1 on error. */
+int db_get_pubkey(const char *username, unsigned char *out);
+
 #endif
