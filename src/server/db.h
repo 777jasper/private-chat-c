@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 
+#define DB_PUBKEY_SIZE 32 /* size of a public key in bytes. */
+
 /* Opens the database file at path (creating it if needed) and makes sure the table exist. Returns 0 on success, -1 on failure. */
 int db_init(const char *path);
 
@@ -15,4 +17,6 @@ int db_add_user(const char *username, const char *pw_hash);
 /* Copies the user's stored hash into out. Returns 0 if found, 1 if there is no such user, -1 0n error. */
 int db_get_hash(const char *username, char *out, size_t out_size);
 
+/* Stores the user's public key (DB_PUBKEY_SIZE bytes). Return 0 on success, 1 if no such user, -1 on error. */
+int db_set_pubkey(const char *username, const unsigned char *key);
 #endif

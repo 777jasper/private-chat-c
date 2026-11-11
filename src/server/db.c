@@ -11,7 +11,8 @@ static const char *SCHEMA_SQL =
 	"CREATE TABLE IF NOT EXISTS users ("
 	"id	INTEGER PRIMARY KEY AUTOINCREMENT,"
 	"username TEXT NOT NULL UNIQUE,"
-	"pw_hash TEXT NOT NULL"
+	"pw_hash TEXT NOT NULL,"
+	"pubkey BLOB"
 	");";
 
 int db_init(const char *path){
@@ -120,6 +121,36 @@ int db_get_hash(const char *username, char *out, size_t out_size){
 	}
 	else{
 		fprintf(stderr, "db: lookup failed: %s\n", sqlite3_errmsg(db));
+		result = -1;
+	}
+
+	sqlite3_finalize(stmt);
+	return result;
+}
+
+int db_set_pubkey(const char *username, const unsigned char *key){
+	if(db == NULL)
+		return -1;
+
+	const char *sql = "UPDATE users SET pubkey = ? WHERE username = ?;";
+	sqlite3_stmt *stmt = NULL;
+
+	/* Compile the sql */
+	int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+	if(rc != SQLITE_OK){
+		fprintf(stderr, "db: prepare failed: %s\n", sqlite3_errmsg(db));
+		return -1;
+	}
+
+	sqlite3_bind_blob(stmt, 1, key, DB_PUBKEY_SIZE, SQLITE_TRANSIENT);
+	sqlite3_bind_text(stmt, 2, username, -1, SQLITE_TRANSIENT);
+
+	rc = sqlite3_step(stmt);
+	int result;
+	if(rc == SQLITE_DONE)
+		result = (sqlite3_changes(db) == 1) ? 0 : 1;
+	else{
+		fprintf(stderr, "db: update failed: %s\n", sqlite3_errmsg(db));
 		result = -1;
 	}
 
