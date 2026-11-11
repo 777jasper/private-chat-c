@@ -12,6 +12,8 @@
 #include "protocol.h"
 #include "db.h"
 #include "auth.h"
+#include "conn.h"
+
 
 #define PORT 5555
 #define BACKLOG 16
@@ -70,48 +72,47 @@ static int parse_credentials(const uint8_t *payload, uint32_t len,const char **u
 
 /* Sends a short text reply (MSG_OK or MSG_ERROR) to the client.
    Returns 0 on success, -1 if sending failed. */
-static int send_text(int fd, uint8_t type, const char *text){
+static int send_text(conn_t *c, uint8_t type, const char *text){
 	
-	int result = send_frame(fd, type, (const uint8_t *)text, strlen(text));
-	return result;
+	return conn_send(c, type, (const uint8_t *)text, strlen(text));
 }
 
 /* Handles one MSG_REGISTER frame. Returns 0 if a reply was sent
    (even an error reply), -1 if the connection is broken. */
-static int handle_register(int fd, const uint8_t *payload, uint32_t len){
+static int handle_register(conn_t *c, const uint8_t *payload, uint32_t len){
 	const char *username;
     	const char *password;
 
     	if(parse_credentials(payload, len, &username, &password) == -1)
-	    	return send_text(fd, MSG_ERROR, "invalid username or password");
+	    	return send_text(c, MSG_ERROR, "invalid username or password");
 
     	char hash[AUTH_HASH_SIZE];
 	
 	if(auth_hash_password(password, hash, sizeof hash) == -1)
-		return send_text(fd, MSG_ERROR, "server error");
+		return send_text(c, MSG_ERROR, "server error");
 	
 	int rc = db_add_user(username, hash);
 	
 	if(rc == 0)
-		return send_text(fd, MSG_OK, "registered");
+		return send_text(c, MSG_OK, "registered");
 	
 	if(rc == 1)
-		return send_text(fd, MSG_ERROR, "username unavailable");
+		return send_text(c, MSG_ERROR, "username unavailable");
 	
-	return send_text(fd, MSG_ERROR, "server error");
+	return send_text(c, MSG_ERROR, "server error");
 }
 
 /* Handles on MSG_LOGIN frame. Returns 0 if a reply was send, -1 if the connection is broken. */
-static int handle_login(int fd, const uint8_t *payload, uint32_t len, session_t *sess){
+static int handle_login(conn_t *c, const uint8_t *payload, uint32_t len, session_t *sess){
 
 	if(sess->logged_in != 0)
-		return send_text(fd, MSG_ERROR, "already logged in");
+		return send_text(c, MSG_ERROR, "already logged in");
 
 	const char *username;
 	const char *password;
 
 	if(parse_credentials(payload, len, &username, &password) == -1)
-		return send_text(fd, MSG_ERROR, "invalid username or password");
+		return send_text(c, MSG_ERROR, "invalid username or password");
 
 	char hash[AUTH_HASH_SIZE];
 	int ok = 0;
@@ -125,22 +126,22 @@ static int handle_login(int fd, const uint8_t *payload, uint32_t len, session_t 
 		auth_dummy_verify(password);
 	}
 	else{
-		return send_text(fd, MSG_ERROR, "server error");
+		return send_text(c, MSG_ERROR, "server error");
 	}
 
 	if(!ok)
-		return send_text(fd, MSG_ERROR, "invalid username or password");
+		return send_text(c, MSG_ERROR, "invalid username or password");
 
 	snprintf(sess->username, sizeof sess->username, "%s", username);
 	sess->logged_in = 1;
 
-	return send_text(fd, MSG_OK, "logged in");
+	return send_text(c, MSG_OK, "logged in");
 }
 
 
 
 /* serves one client until it disconnects */
-static void handle_client(int client_fd){
+static void handle_client(conn_t *c){
 
 	session_t sess = {0};
 
@@ -149,20 +150,20 @@ static void handle_client(int client_fd){
 		uint8_t *payload;
 		uint32_t len;
 
-		if(recv_frame(client_fd, &type, &payload, &len)<0){
+		if(recv_frame(c->fd, &type, &payload, &len)<0){
 			
 			break;
 		}
 
 		int rc;
 		switch(type){
-			case MSG_REGISTER: rc = handle_register(client_fd, payload, len);
+			case MSG_REGISTER: rc = handle_register(c, payload, len);
 					   break;
 			
-			case MSG_LOGIN: rc = handle_login(client_fd, payload, len, &sess);
+			case MSG_LOGIN: rc = handle_login(c, payload, len, &sess);
 					break;			
 			default:
-					   rc = send_text(client_fd, MSG_ERROR, "unsupported request");
+					   rc = send_text(c, MSG_ERROR, "unsupported request");
 					   break;
 		}
 
@@ -182,9 +183,14 @@ static void *client_thread(void *arg){
 	int client_fd = *(int *)arg;
 	free(arg);
 
-	handle_client(client_fd);
-	close(client_fd);
-
+	conn_t *c = conn_create(client_fd);
+	if(c==NULL){
+		close(client_fd);
+		return NULL;
+	}
+	handle_client(c);
+	conn_shutdown(c); /* closes the socket exactly once. */
+	conn_unref(c); /* drops our reference; frees c at zero. */
 	return NULL;
 }
 

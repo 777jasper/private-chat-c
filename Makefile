@@ -23,7 +23,7 @@ all: $(BUILD)/server
 $(BUILD)/server: $(SERVER_OBJS) $(SQLITE_OBJ)
 	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
-$(BUILD)/server.o: src/server/server.c src/common/net_io.h src/common/protocol.h src/server/db.h src/server/auth.h
+$(BUILD)/server.o: src/server/server.c src/common/net_io.h src/common/protocol.h src/server/db.h src/server/auth.h src/server/conn.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/net_io.o: src/common/net_io.c src/common/net_io.h src/common/protocol.h
@@ -35,7 +35,7 @@ $(BUILD)/db.o: src/server/db.c src/server/db.h $(SQLITE_DIR)/sqlite3.h
 $(BUILD)/auth.o: src/server/auth.c src/server/auth.h
 	$(CC) $(CFLAGS) $(SODIUM_CFLAGS) -c $< -o $@
 
-$(BUILD)/registry.o: src/server/registry.c src/server/registry.h
+$(BUILD)/registry.o: src/server/registry.c src/server/registry.h src/server/conn.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/conn.o: src/server/conn.c src/server/conn.h src/common/net_io.h src/common/protocol.h
