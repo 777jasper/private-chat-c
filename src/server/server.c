@@ -144,7 +144,59 @@ static int handle_login(conn_t *c, const uint8_t *payload, uint32_t len, session
 	return send_text(c, MSG_OK, "logged in");
 }
 
+/* Handles one MSG_SEND frame ("recipient 00 body"). Returns 0 if a reply
+   was sent to the sender, -1 if the sender's connection is broken. */
+static int handle_send(conn_t *c, const uint8_t *payload, uint32_t len, const session_t *sess){
+	if(!sess->logged_in)
+		return send_text(c, MSG_ERROR, "not logged in");
 
+	if(len == 0)
+		return send_text(c, MSG_ERROR, "invalid message");
+	
+	const uint8_t *sep = memchr(payload, 0, len);
+	if(sep == NULL || sep == payload+len-1)
+		return send_text(c, MSG_ERROR, "invalid message");
+
+	size_t r_len = sep - payload;
+	size_t body_len = len -r_len -1;
+	if(r_len < USERNAME_MIN || r_len > USERNAME_MAX || body_len > MAX_PAYLOAD - USERNAME_MAX -1)
+		return send_text(c, MSG_ERROR, "invalid message");
+
+	/* check each recipient character, like parse_credentials */
+	for(size_t i = 0; i < r_len; i++){
+		unsigned char ch = payload[i];
+		if(!isalnum(ch) && ch !='_')
+			return send_text(c, MSG_ERROR, "invalid message");
+	}
+
+	/* copy the recipient into a terminated string */
+	char recipient[USERNAME_MAX + 1];
+	memcpy(recipient, payload, r_len);
+	recipient[r_len] = '\0';
+
+	conn_t *dest = registry_lookup(recipient);
+	if(dest == NULL)
+		return send_text(c, MSG_ERROR, "recipient unavailable");
+
+	/* build the delivery payload "sender 00 body" */
+	size_t s_len = strlen(sess->username);
+	size_t total = s_len + 1 + body_len;
+	uint8_t *out = malloc(total);
+	if(out == NULL){
+		conn_unref(dest);
+		return send_text(c, MSG_ERROR, "server error");
+	}
+	memcpy(out, sess->username, s_len+1); /* includes the 00 */
+	memcpy(out + s_len + 1, sep + 1, body_len);
+
+	int rc = conn_send(dest, MSG_DELIVER, out, (uint32_t)total);
+	free(out);
+	conn_unref(dest);
+
+	if(rc == 0)
+		return send_text(c, MSG_OK, "sent");
+	return send_text(c, MSG_ERROR, "recipient unavailable");
+}
 
 /* serves one client until it disconnects */
 static void handle_client(conn_t *c){
@@ -167,7 +219,9 @@ static void handle_client(conn_t *c){
 					   break;
 			
 			case MSG_LOGIN: rc = handle_login(c, payload, len, &sess);
-					break;			
+					break;
+			case MSG_SEND:	rc = handle_send(c, payload, len, &sess);
+					break;
 			default:
 					   rc = send_text(c, MSG_ERROR, "unsupported request");
 					   break;
