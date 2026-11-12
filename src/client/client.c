@@ -15,10 +15,21 @@
 #define USER_BUF  64
 #define PASS_BUF  256
 
+#define KEYCACHE_MAX 16
+#define KC_NAME_SIZE 33 /* 32 characters plus final 00 */
+
+typedef struct{
+	int used;
+	char name[KC_NAME_SIZE];
+	unsigned char pk[crypto_box_PUBLICKEYBYTES];
+}cached_key_t;
+
 typedef struct{
 	int fd;
 	unsigned char pk[crypto_box_PUBLICKEYBYTES]; /* my public key */
 	unsigned char sk[crypto_box_SECRETKEYBYTES]; /* my SECRET key: never sent, never printed */
+	cached_key_t cache[KEYCACHE_MAX];
+	size_t cache_next; /* slot to overwrite when a new name arrives */
 }chat_ctx_t;
 
 /* Reads one line from the keyboard into buf (without the newline).
@@ -90,6 +101,42 @@ static int connect_server(void)
 	return fd;
 }
 
+/* Returns the cached key for name, or NULL if we don't have it. */
+static const unsigned char *cache_find(const chat_ctx_t *ctx, const char *name){
+	for(size_t i = 0; i<KEYCACHE_MAX; i++){
+		if(ctx->cache[i].used && strcmp(ctx->cache[i].name, name) == 0)
+			return ctx->cache[i].pk;
+	}
+	return NULL;
+}
+
+
+/* Stores a key. name must be at most KC_NAME_SIZE - 1 characters. */
+static void cache_put(chat_ctx_t *ctx, const char *name, const unsigned char *pk){
+	/* look for an existing entry with this name */
+	for(size_t i = 0; i<KEYCACHE_MAX; i++){
+		if(ctx->cache[i].used && strcmp(ctx->cache[i].name, name) == 0){
+			memcpy(ctx->cache[i].pk, pk, crypto_box_PUBLICKEYBYTES);
+			return;
+		}
+	}
+
+	/* name not found, take the next slot */
+	cached_key_t *e = &ctx->cache[ctx->cache_next];
+	ctx->cache_next = (ctx->cache_next + 1) % KEYCACHE_MAX;
+	e->used = 1;
+	snprintf(e->name, sizeof e->name, "%s", name);
+	memcpy(e->pk,pk, crypto_box_PUBLICKEYBYTES);
+}
+
+/* Prints a key as hex. note is "" or " (cached)". */
+static void print_key(const char *name, const unsigned char *pk, const char *note){
+	printf("key for %s:", name);
+	for(size_t i = 0; i<crypto_box_PUBLICKEYBYTES; i++)
+		printf("%02x", pk[i]);
+	printf("%s\n", note);
+}
+
 /* Handles one frame from the server. Returns 0 to keep going, -1 if the connection is gone. */
 static int handle_incoming(chat_ctx_t *ctx)
 {
@@ -118,15 +165,12 @@ static int handle_incoming(chat_ctx_t *ctx)
 	else if(type == MSG_KEY){
 		/* find the separator */
 		const uint8_t *sep = (len > 0) ? memchr(payload, 0, len) : NULL;
-		if(sep == NULL || len - (size_t)(sep-payload)-1 != crypto_box_PUBLICKEYBYTES){
+		if(sep == NULL || (size_t)(sep-payload)>KC_NAME_SIZE-1|| len - (size_t)(sep-payload)-1 != crypto_box_PUBLICKEYBYTES){
 			printf("malformed key reply\n");
 		}
 		else{
-			printf("key for %s:", (const char*)payload);
-			for(size_t i = 0; i<crypto_box_PUBLICKEYBYTES; i++){
-				printf("%02x", sep[i+1]);
-			}
-			printf("\n");
+			cache_put(ctx, (const char *)payload, sep + 1);
+			print_key((const char *)payload, sep + 1, "");
 		}
 	}
 
@@ -145,6 +189,11 @@ static int handle_typed(chat_ctx_t *ctx, char *line){
 		size_t n = strlen(name);
 		if(n == 0){
 			printf("usage: /key username\n");
+			return 0;
+		}
+		const unsigned char *known = cache_find(ctx, name);
+		if(known != NULL){
+			print_key(name, known, " (cached)");
 			return 0;
 		}
 		int rc = send_frame(ctx->fd, MSG_GET_KEY, (const uint8_t *)name, (uint32_t)n);
