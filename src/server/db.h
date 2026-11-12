@@ -2,6 +2,7 @@
 #define DB_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define DB_PUBKEY_SIZE 32 /* size of a public key in bytes. */
 
@@ -22,5 +23,8 @@ int db_set_pubkey(const char *username, const unsigned char *key);
 
 /* Copies the user's public key (DB_PUBKEY_SIZE bytes) into out. Returns 0 if found, 1 if there is no such user or no key yet, -1 on error. */
 int db_get_pubkey(const char *username, unsigned char *out);
+
+/* Stores one encrypted message. Returns 0 on success, 1 if either user doesn't exist, -1 on error. */
+int db_store_message(const char *sender, const char *recipient, const uint8_t *body, size_t body_len);
 
 #endif

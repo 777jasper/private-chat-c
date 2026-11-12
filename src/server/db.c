@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "sqlite3.h"
+#include <time.h>
 #include "db.h"
 
 /* The one shared connection. "static" makes it private to this file. */
@@ -13,7 +14,15 @@ static const char *SCHEMA_SQL =
 	"username TEXT NOT NULL UNIQUE,"
 	"pw_hash TEXT NOT NULL,"
 	"pubkey BLOB"
-	");";
+	");"
+	"CREATE TABLE IF NOT EXISTS messages ("
+        "id           INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "sender_id    INTEGER NOT NULL,"
+        "recipient_id INTEGER NOT NULL,"
+        "sent_at      INTEGER NOT NULL,"
+        "body         BLOB NOT NULL,"
+        "delivered    INTEGER NOT NULL DEFAULT 0"
+        ");";
 
 int db_init(const char *path){
 
@@ -201,3 +210,39 @@ int db_get_pubkey(const char *username, unsigned char *out){
 	return result;
 }
 
+int db_store_message(const char *sender, const char *recipient, const uint8_t *body, size_t body_len){
+
+	if(db == NULL)
+		return -1;
+
+	const char *sql =
+		"INSERT INTO messages (sender_id, recipient_id, sent_at, body)"
+		"SELECT s.id, r.id, ?, ? FROM users s, users r"
+		"WHERE s.username = ? AND r.username = ?;";
+
+	sqlite3_stmt *stmt = NULL;
+
+	/* compile the SQL */
+	int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+	if(rc!= SQLITE_OK){
+		fprintf(stderr, "db: prepare failed: %s\n", sqlite3_errmsg(db));
+		return -1;
+	}
+
+	/* bind the four place holders in the order they appear */
+	sqlite3_bind_int64(stmt, 1, (sqlite3_int64)time(NULL));
+	sqlite3_bind_blob(stmt, 2, body, (int)body_len, SQLITE_TRANSIENT);
+	sqlite3_bind_text(stmt, 3, sender, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(stmt, 4, recipient, -1, SQLITE_TRANSIENT);
+
+	rc = sqlite3_step(stmt);
+	int result;
+	if(rc == SQLITE_DONE)
+		result = (sqlite3_changes(db) == 1) ? 0 : 1;
+	else{
+		fprintf(stderr, "db: store failed: %s\n", sqlite3_errmsg(db));
+		result = -1;
+	}
+	sqlite3_finalize(stmt);
+	return result;
+}
