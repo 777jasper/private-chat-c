@@ -10,6 +10,7 @@
 #include <poll.h>
 #include <errno.h>
 #include "keys.h"
+#include "msgcrypt.h"
 
 #define PORT      5555
 #define USER_BUF  64
@@ -155,7 +156,7 @@ static int handle_incoming(chat_ctx_t *ctx)
 			printf("malformed delivery\n");
 		else{
 			size_t body_len = len - (size_t)(sep - payload) - 1;
-			printf("from %s: %.*s\n", (const char *)payload, (int)body_len, (const char*)(sep + 1));
+			printf("from %s: [%zu encrypted bytes]\n", (const char *)payload, body_len);
 		}
 	}
 	else if(type == MSG_OK || type == MSG_ERROR){
@@ -209,7 +210,38 @@ static int handle_typed(chat_ctx_t *ctx, char *line){
 	const char *body = sp + 1;
 	size_t body_len = strlen(body);
 
-	/* build "recipient 00 body" (no final 00 after the body) */
+	/* cut the line after the recipient, so "line" is now a terminated name.
+	 * body already points past the space, so it is not affected.*/
+	*sp = '\0';
+
+	/* look up the recipient's public key */
+	const unsigned char *their_pk = cache_find(ctx, line);
+	if(their_pk == NULL){
+		printf("no key for %s yet; type /key %s first\n", line, line);
+		return 0;
+	}
+
+	/* encrypt the body */
+	uint8_t *enc;
+	size_t enc_len;
+	if(msgcrypt_encrypt((const uint8_t *)body, body_len, their_pk, ctx->sk, &enc, &enc_len) == -1){
+		printf("encryption failed\n");
+		return 0;
+	}
+
+	/* build "recipient 00 ciphertext" */
+	size_t total = r_len + 1 + enc_len;
+	uint8_t *buf = malloc(total);
+	if(buf == NULL){
+		free(enc);
+		return -1;
+	}
+	memcpy(buf, line, r_len);
+	buf[r_len] = 0;
+	memcpy(buf + r_len + 1, enc, enc_len);
+	free(enc);
+	
+	/* build "recipient 00 body" (no final 00 after the body) 
 	size_t total = r_len + 1 + body_len;
 	uint8_t *buf = malloc(total);
 	if(buf == NULL)
@@ -217,7 +249,7 @@ static int handle_typed(chat_ctx_t *ctx, char *line){
 	memcpy(buf, line, r_len);
 	buf[r_len] = 0;
 	memcpy(buf + r_len + 1, body, body_len);
-
+*/
 	int rc = send_frame(ctx->fd, MSG_SEND, buf, (uint32_t)total);
 	free(buf);
 	return (rc == 0) ? 0 : -1;

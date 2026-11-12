@@ -13,7 +13,7 @@ LDLIBS	= -ldl -lm $(SODIUM_LIBS)
 BUILD	= build
 
 SERVER_OBJS = $(BUILD)/server.o $(BUILD)/net_io.o $(BUILD)/db.o $(BUILD)/auth.o $(BUILD)/registry.o $(BUILD)/conn.o
-CLIENT_OBJS = $(BUILD)/client.o $(BUILD)/net_io.o $(BUILD)/keys.o
+CLIENT_OBJS = $(BUILD)/client.o $(BUILD)/net_io.o $(BUILD)/keys.o $(BUILD)/msgcrypt.o
 
 SQLITE_DIR = deps/sqlite/sqlite-amalgamation-3540100
 SQLITE_OBJ = $(BUILD)/sqlite3.o
@@ -45,7 +45,10 @@ $(BUILD)/registry.o: src/server/registry.c src/server/registry.h src/server/conn
 $(BUILD)/conn.o: src/server/conn.c src/server/conn.h src/common/net_io.h src/common/protocol.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/client.o: src/client/client.c src/common/net_io.h src/common/protocol.h src/client/keys.h
+$(BUILD)/msgcrypt.o: src/client/msgcrypt.c src/client/msgcrypt.h
+	$(CC) $(CFLAGS) $(SODIUM_CFLAGS) -c $< -o $@
+
+$(BUILD)/client.o: src/client/client.c src/common/net_io.h src/common/protocol.h src/client/keys.h src/client/msgcrypt.h
 	$(CC) $(CFLAGS) $(SODIUM_CFLAGS) -c $< -o $@
 
 $(BUILD)/keys.o: src/client/keys.c src/client/keys.h
@@ -60,7 +63,7 @@ sqlite: $(SQLITE_OBJ)
 
 
 clean:
-	rm -f $(BUILD)/server $(SERVER_OBJS) $(BUILD)/client $(BUILD)/client.o $(BUILD)/keys.o
+	rm -f $(BUILD)/server $(SERVER_OBJS) $(BUILD)/client $(BUILD)/client.o $(BUILD)/keys.o $(BUILD)/msgcrypt.o
 
 clean-all: 
 	rm -f $(BUILD)/server $(BUILD)/*.o
