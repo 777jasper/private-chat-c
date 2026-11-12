@@ -108,6 +108,22 @@ static int handle_incoming(int fd)
 	else if(type == MSG_OK || type == MSG_ERROR){
 		printf("[server] %.*s\n", (int)len, payload ? (char *)payload : "");
 	}
+
+	else if(type == MSG_KEY){
+		/* find the separator */
+		const uint8_t *sep = (len > 0) ? memchr(payload, 0, len) : NULL;
+		if(sep == NULL || len - (size_t)(sep-payload)-1 != crypto_box_PUBLICKEYBYTES){
+			printf("malformed key reply\n");
+		}
+		else{
+			printf("key for %s:", (const char*)payload);
+			for(size_t i = 0; i<crypto_box_PUBLICKEYBYTES; i++){
+				printf("%02x", sep[i+1]);
+			}
+			printf("\n");
+		}
+	}
+
 	free(payload);
 	return 0;
 }
@@ -116,6 +132,18 @@ static int handle_incoming(int fd)
 static int handle_typed(int fd, char *line){
 	if(strcmp(line, "/quit") == 0)
 		return 1;
+
+	/* "/key name" command */
+	if(strncmp(line, "/key ", 5) == 0){
+		const char *name = line + 5;
+		size_t n = strlen(name);
+		if(n == 0){
+			printf("usage: /key username\n");
+			return 0;
+		}
+		int rc = send_frame(fd, MSG_GET_KEY, (const uint8_t *)name, (uint32_t)n);
+		return (rc == 0) ? 0 : -1;
+	}
 
 	char *sp = strchr(line, ' ');
 	if(sp == NULL || sp == line || sp[1] == '\0'){
