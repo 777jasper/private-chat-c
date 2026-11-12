@@ -155,8 +155,24 @@ static int handle_incoming(chat_ctx_t *ctx)
 		if(sep == NULL)
 			printf("malformed delivery\n");
 		else{
-			size_t body_len = len - (size_t)(sep - payload) - 1;
-			printf("from %s: [%zu encrypted bytes]\n", (const char *)payload, body_len);
+			const char *sender = (const char *)payload;
+			size_t body_len = len - (size_t)(sep-payload)-1;
+
+			const unsigned char *their_pk = cache_find(ctx,sender);
+			if(their_pk == NULL){
+				printf("message from %s, but I have no key for them; "
+						"type /key %s (this message is lost)\n", sender, sender);
+			}
+			else{
+				uint8_t *plain;
+				size_t plain_len;
+				if(msgcrypt_decrypt(sep + 1, body_len, their_pk, ctx->sk, &plain, &plain_len) == -1)
+					printf("from %s: [could not decrypt]\n", sender);
+				else{
+					printf("from %s: %.*s\n", sender, (int)plain_len, (const char*)plain);
+					free(plain);
+				}
+			}
 		}
 	}
 	else if(type == MSG_OK || type == MSG_ERROR){
