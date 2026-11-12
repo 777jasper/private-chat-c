@@ -15,6 +15,12 @@
 #define USER_BUF  64
 #define PASS_BUF  256
 
+typedef struct{
+	int fd;
+	unsigned char pk[crypto_box_PUBLICKEYBYTES]; /* my public key */
+	unsigned char sk[crypto_box_SECRETKEYBYTES]; /* my SECRET key: never sent, never printed */
+}chat_ctx_t;
+
 /* Reads one line from the keyboard into buf (without the newline).
    Returns 0 on success, -1 on end of input or error. */
 static int read_line(const char *prompt, char *buf, size_t size)
@@ -85,13 +91,13 @@ static int connect_server(void)
 }
 
 /* Handles one frame from the server. Returns 0 to keep going, -1 if the connection is gone. */
-static int handle_incoming(int fd)
+static int handle_incoming(chat_ctx_t *ctx)
 {
 	uint8_t type;
 	uint8_t *payload;
 	uint32_t len;
 
-	if(recv_frame(fd, &type, &payload, &len) == -1){
+	if(recv_frame(ctx->fd, &type, &payload, &len) == -1){
 		printf("server closed the connection\n");
 		return -1;
 	}
@@ -129,7 +135,7 @@ static int handle_incoming(int fd)
 }
 
 /* Handles one typed line "recipient message". Returns 0 to keep going, 1 to quit, -1 if sending failed. */
-static int handle_typed(int fd, char *line){
+static int handle_typed(chat_ctx_t *ctx, char *line){
 	if(strcmp(line, "/quit") == 0)
 		return 1;
 
@@ -141,7 +147,7 @@ static int handle_typed(int fd, char *line){
 			printf("usage: /key username\n");
 			return 0;
 		}
-		int rc = send_frame(fd, MSG_GET_KEY, (const uint8_t *)name, (uint32_t)n);
+		int rc = send_frame(ctx->fd, MSG_GET_KEY, (const uint8_t *)name, (uint32_t)n);
 		return (rc == 0) ? 0 : -1;
 	}
 
@@ -163,19 +169,19 @@ static int handle_typed(int fd, char *line){
 	buf[r_len] = 0;
 	memcpy(buf + r_len + 1, body, body_len);
 
-	int rc = send_frame(fd, MSG_SEND, buf, (uint32_t)total);
+	int rc = send_frame(ctx->fd, MSG_SEND, buf, (uint32_t)total);
 	free(buf);
 	return (rc == 0) ? 0 : -1;
 }
 
 /* Runs until the user quits or the connection is lost */
-static int chat_loop(int fd){
+static int chat_loop(chat_ctx_t *ctx){
 	printf("Logged in. Type: recipient message (or /quit)\n");
 
 	struct pollfd fds[2];
 	fds[0].fd = 0;
 	fds[0].events = POLLIN;
-	fds[1].fd = fd;
+	fds[1].fd = ctx->fd;
 	fds[1].events = POLLIN;
 
 	for(;;){
@@ -188,7 +194,7 @@ static int chat_loop(int fd){
 		}
 
 		if(fds[1].revents & (POLLIN | POLLHUP | POLLERR)){
-			if(handle_incoming(fd) == -1)
+			if(handle_incoming(ctx) == -1)
 				return 0;
 		}
 
@@ -197,7 +203,7 @@ static int chat_loop(int fd){
 
 			if(read_line("", line,sizeof line) == -1)
 				return 0; /* CTRL+D: leave */
-			int r = handle_typed(fd, line);
+			int r = handle_typed(ctx, line);
 			if(r==1)
 				return 0; /* /quit */
 			if(r==-1){
@@ -297,26 +303,32 @@ int main(void)
 		    close(fd);
 		    return 1;
 	    }
-	    unsigned char pk[crypto_box_PUBLICKEYBYTES];
-	    unsigned char sk[crypto_box_SECRETKEYBYTES];
-	    if(keys_load_or_create(username, pk, sk) == -1){
+
+	    chat_ctx_t ctx = {0};
+	    ctx.fd = fd;
+	    /* load or create the keys directly into the struct */
+	    if(keys_load_or_create(username, ctx.pk, ctx.sk) == -1){
+		    sodium_memzero(ctx.sk, sizeof ctx.sk);
 		    close(fd);
 		    return 1;
 	    }
-
-	    /* upload the public key and wipe the secret key */
-	    int krc = send_frame(fd, MSG_SET_KEY, pk, sizeof pk);
-	    sodium_memzero(sk, sizeof sk);
+	    
+	    /* upload the public key. DO NOT wipe sk here any more */
+	    int krc = send_frame(fd, MSG_SET_KEY, ctx.pk, sizeof ctx.pk);
 	    if(krc == -1){
 		    fprintf(stderr, "could not send key\n");
+		    sodium_memzero(ctx.sk, sizeof ctx.sk);
 		    close(fd);
 		    return 1;
 	    }
 
-	    int chat_rc = chat_loop(fd);
+	    /* run the loop, then wipe the secret key on the way out */
+	    int chat_rc = chat_loop(&ctx);
+	    sodium_memzero(ctx.sk, sizeof ctx.sk);
 	    close(fd);
 	    return (chat_rc == 0) ? 0 : 1;
     }
+
     close(fd);
     return (type == MSG_OK) ? 0 : 1;
 }
