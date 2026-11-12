@@ -217,7 +217,7 @@ int db_store_message(const char *sender, const char *recipient, const uint8_t *b
 
 	const char *sql =
 		"INSERT INTO messages (sender_id, recipient_id, sent_at, body)"
-		"SELECT s.id, r.id, ?, ? FROM users s, users r"
+		"SELECT s.id, r.id, ?, ? FROM users s, users r "
 		"WHERE s.username = ? AND r.username = ?;";
 
 	sqlite3_stmt *stmt = NULL;
