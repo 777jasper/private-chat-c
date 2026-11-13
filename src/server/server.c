@@ -102,6 +102,40 @@ static int handle_register(conn_t *c, const uint8_t *payload, uint32_t len){
 	return send_text(c, MSG_ERROR, "server error");
 }
 
+/* Sends every undelivered message waiting for username, oldest first. Stops at the first failure; whatever is left waits for the next login. */
+static void deliver_backlog(conn_t *c, const char *username){
+
+	for(;;){
+		int64_t id;
+		char sender[USERNAME_MAX + 1];
+		uint8_t *body;
+		size_t body_len;
+
+		int rc = db_next_undelivered(username, &id, sender, sizeof sender, &body, &body_len);
+		if(rc!=0)
+			break; /* 1 = nothing waiting, -1 = error */
+
+		/* build the frame payload "sender 00 body" */
+		size_t s_len = strlen(sender);
+		size_t total = s_len + 1 + body_len;
+		uint8_t *out = (total <= MAX_PAYLOAD) ? malloc(total) : NULL;
+		if(out == NULL){
+			free(body);
+			break;
+		}
+		memcpy(out, sender, s_len + 1); // includes the 00
+		memcpy(out+s_len+1, body, body_len);
+		free(body);
+
+		int sent = conn_send(c, MSG_DELIVER, out, (uint32_t)total);
+		free(out);
+		if(sent == -1)
+			break;
+		if(db_mark_delivered(id) == -1)
+			break;
+	}
+}
+
 /* Handles on MSG_LOGIN frame. Returns 0 if a reply was send, -1 if the connection is broken. */
 static int handle_login(conn_t *c, const uint8_t *payload, uint32_t len, session_t *sess){
 
@@ -141,7 +175,11 @@ static int handle_login(conn_t *c, const uint8_t *payload, uint32_t len, session
 	snprintf(sess->username, sizeof sess->username, "%s", username);
 	sess->logged_in = 1;
 
-	return send_text(c, MSG_OK, "logged in");
+	rc = send_text(c, MSG_OK, "logged in");
+	if(rc == -1)
+		return -1;
+	deliver_backlog(c, sess->username);
+	return 0;
 }
 
 /* Handles one MSG_SEND frame ("recipient 00 body"). Returns 0 if a reply
