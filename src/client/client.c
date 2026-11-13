@@ -239,8 +239,14 @@ static int handle_incoming(chat_ctx_t *ctx)
 
 			const unsigned char *their_pk = cache_find(ctx,sender);
 			if(their_pk == NULL){
-				printf("message from %s, but I have no key for them; "
-						"type /key %s (this message is lost)\n", sender, sender);
+				/* remember whether a request is already out BEFORE adding */
+				int already_asked = pending_has(ctx, sender);
+				if(pending_add(ctx, sender, sep + 1, body_len) == -1){
+					printf("message from %s dropped: waiting list full\n", sender);
+				}
+				else if(!already_asked){
+					send_frame(ctx->fd, MSG_GET_KEY, (const uint8_t *)sender, (uint32_t)strlen(sender));
+				}
 			}
 			else{
 				show_message(ctx, sender, their_pk, sep + 1, body_len);
@@ -258,8 +264,14 @@ static int handle_incoming(chat_ctx_t *ctx)
 			printf("malformed key reply\n");
 		}
 		else{
-			cache_put(ctx, (const char *)payload, sep + 1);
-			print_key((const char *)payload, sep + 1, "");
+			const char *who = (const char*)payload;
+			int had_pending = pending_has(ctx, who);
+			cache_put(ctx, who, sep + 1);
+			if(had_pending)
+				pending_flush(ctx, who, sep + 1);
+			else
+				print_key(who, sep + 1, "");
+
 		}
 	}
 
@@ -493,6 +505,7 @@ int main(void)
 
 	    /* run the loop, then wipe the secret key on the way out */
 	    int chat_rc = chat_loop(&ctx);
+	    pending_free_all(&ctx);
 	    sodium_memzero(ctx.sk, sizeof ctx.sk);
 	    close(fd);
 	    return (chat_rc == 0) ? 0 : 1;
