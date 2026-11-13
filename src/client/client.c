@@ -19,6 +19,14 @@
 #define KEYCACHE_MAX 16
 #define KC_NAME_SIZE 33 /* 32 characters plus final 00 */
 
+#define PENDING_MAX 32
+
+typedef struct{
+	char sender[KC_NAME_SIZE];
+	uint8_t *body;	/* malloc'd copy of "nonce | ciphertext" */
+	size_t body_len;
+}pending_t;
+
 typedef struct{
 	int used;
 	char name[KC_NAME_SIZE];
@@ -31,6 +39,8 @@ typedef struct{
 	unsigned char sk[crypto_box_SECRETKEYBYTES]; /* my SECRET key: never sent, never printed */
 	cached_key_t cache[KEYCACHE_MAX];
 	size_t cache_next; /* slot to overwrite when a new name arrives */
+	pending_t pending[PENDING_MAX];
+	size_t pending_count;
 }chat_ctx_t;
 
 /* Reads one line from the keyboard into buf (without the newline).
@@ -138,6 +148,75 @@ static void print_key(const char *name, const unsigned char *pk, const char *not
 	printf("%s\n", note);
 }
 
+/* Decrypts one message and prints it. */
+static void show_message(const chat_ctx_t *ctx, const char *sender, const unsigned char *their_pk, const uint8_t *body, size_t body_len){
+
+	uint8_t *plain;
+	size_t plain_len;
+	if(msgcrypt_decrypt(body, body_len, their_pk, ctx->sk, &plain, &plain_len) == -1){
+		printf("from %s: [could not decrypt]\n", sender);
+		return;
+	}
+	printf("from %s: %.*s\n", sender, (int)plain_len, (const char*)plain);
+	free(plain);
+}
+
+/* Returns 1 if a message from sender is already waiting, otherwise 0. */
+static int pending_has(const chat_ctx_t *ctx, const char *sender){
+
+	for(size_t i = 0; i<ctx->pending_count; i++){
+		if(strcmp(ctx->pending[i].sender, sender) == 0)
+			return 1;
+	}
+	return 0;
+}
+
+/* Keeps a copy of an encrypted message until its sender's key is known.
+   Returns 0 on success, -1 if the list is full or memory ran out. */
+static int pending_add(chat_ctx_t *ctx, const char *sender, const uint8_t *body, size_t body_len){
+
+	if(ctx->pending_count >= PENDING_MAX)
+		return -1;
+	uint8_t *copy = malloc(body_len > 0 ? body_len : 1);
+	if(copy == NULL)
+		return -1;
+	memcpy(copy, body, body_len);
+	pending_t *p = &ctx->pending[ctx->pending_count];
+	snprintf(p->sender, sizeof p->sender, "%s", sender);
+	p->body = copy;
+	p->body_len = body_len;
+	ctx->pending_count++;
+	return 0;
+}
+
+/* Decrypts and prints every waiting message from sender, in order. */
+static void pending_flush(chat_ctx_t *ctx, const char *sender, const unsigned char *their_pk){
+
+	size_t keep = 0;
+	for(size_t i = 0; i < ctx->pending_count; i++){
+		pending_t *p = &ctx->pending[i];
+		if(strcmp(p->sender, sender) == 0){
+			show_message(ctx, p->sender, their_pk, p->body, p->body_len);
+			free(p->body);
+		}
+		else{
+			if(keep!=i)
+				ctx->pending[keep] = *p;
+			keep++;
+		}
+	}
+	ctx->pending_count = keep;
+}
+
+/* Frees every waiting message. Call before the program exits. */
+static void pending_free_all(chat_ctx_t *ctx){
+
+	for(size_t i = 0; i < ctx->pending_count; i++)
+		free(ctx->pending[i].body);
+	ctx->pending_count = 0;
+}
+
+
 /* Handles one frame from the server. Returns 0 to keep going, -1 if the connection is gone. */
 static int handle_incoming(chat_ctx_t *ctx)
 {
@@ -164,14 +243,7 @@ static int handle_incoming(chat_ctx_t *ctx)
 						"type /key %s (this message is lost)\n", sender, sender);
 			}
 			else{
-				uint8_t *plain;
-				size_t plain_len;
-				if(msgcrypt_decrypt(sep + 1, body_len, their_pk, ctx->sk, &plain, &plain_len) == -1)
-					printf("from %s: [could not decrypt]\n", sender);
-				else{
-					printf("from %s: %.*s\n", sender, (int)plain_len, (const char*)plain);
-					free(plain);
-				}
+				show_message(ctx, sender, their_pk, sep + 1, body_len);
 			}
 		}
 	}
