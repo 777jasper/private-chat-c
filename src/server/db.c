@@ -210,7 +210,7 @@ int db_get_pubkey(const char *username, unsigned char *out){
 	return result;
 }
 
-int db_store_message(const char *sender, const char *recipient, const uint8_t *body, size_t body_len){
+int db_store_message(const char *sender, const char *recipient, const uint8_t *body, size_t body_len, int64_t *id_out){
 
 	if(db == NULL)
 		return -1;
@@ -218,7 +218,7 @@ int db_store_message(const char *sender, const char *recipient, const uint8_t *b
 	const char *sql =
 		"INSERT INTO messages (sender_id, recipient_id, sent_at, body)"
 		"SELECT s.id, r.id, ?, ? FROM users s, users r "
-		"WHERE s.username = ? AND r.username = ?;";
+		"WHERE s.username = ? AND r.username = ? RETURNING id;";
 
 	sqlite3_stmt *stmt = NULL;
 
@@ -237,8 +237,22 @@ int db_store_message(const char *sender, const char *recipient, const uint8_t *b
 
 	rc = sqlite3_step(stmt);
 	int result;
-	if(rc == SQLITE_DONE)
-		result = (sqlite3_changes(db) == 1) ? 0 : 1;
+	if(rc == SQLITE_ROW){
+		if(id_out != NULL)
+			*id_out = (int64_t)sqlite3_column_int64(stmt,0);
+		rc = sqlite3_step(stmt);
+		
+		if(rc == SQLITE_DONE)
+			result = 0;
+
+		else{
+			fprintf(stderr, "db: store failed: %s\n", sqlite3_errmsg(db));
+			result = -1;
+		}
+	}
+	else if(rc == SQLITE_DONE){
+		result = 1; /* no such user */
+	}
 	else{
 		fprintf(stderr, "db: store failed: %s\n", sqlite3_errmsg(db));
 		result = -1;

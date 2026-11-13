@@ -174,8 +174,9 @@ static int handle_send(conn_t *c, const uint8_t *payload, uint32_t len, const se
 	memcpy(recipient, payload, r_len);
 	recipient[r_len] = '\0';
 
+	int64_t msg_id = 0;
 	/* store the message before trying to deliver it */
-	int st = db_store_message(sess->username, recipient, sep + 1, body_len);
+	int st = db_store_message(sess->username, recipient, sep + 1, body_len, &msg_id);
 	if(st == 1)
 		return send_text(c, MSG_ERROR, "unknown user");
 	if(st == -1)

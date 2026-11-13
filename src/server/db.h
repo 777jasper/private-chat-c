@@ -24,7 +24,6 @@ int db_set_pubkey(const char *username, const unsigned char *key);
 /* Copies the user's public key (DB_PUBKEY_SIZE bytes) into out. Returns 0 if found, 1 if there is no such user or no key yet, -1 on error. */
 int db_get_pubkey(const char *username, unsigned char *out);
 
-/* Stores one encrypted message. Returns 0 on success, 1 if either user doesn't exist, -1 on error. */
-int db_store_message(const char *sender, const char *recipient, const uint8_t *body, size_t body_len);
-
+/* Stores one encrypted message. Returns 0 on success, 1 if either user doesn't exist, -1 on error. id is written to *id_out (which may be NULL) on success */
+int db_store_message(const char *sender, const char *recipient, const uint8_t *body, size_t body_len, int64_t *id_out);
 #endif
