@@ -201,7 +201,9 @@ static int handle_send(conn_t *c, const uint8_t *payload, uint32_t len, const se
 	free(out);
 	conn_unref(dest);
 
-	(void) rc; /* the message is stored, so a failed live, delivery doesn't matter to the sender */
+	if(rc == 0)
+		db_mark_delivered(msg_id);
+
 	return send_text(c, MSG_OK, "sent");
 }
 

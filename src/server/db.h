@@ -26,4 +26,7 @@ int db_get_pubkey(const char *username, unsigned char *out);
 
 /* Stores one encrypted message. Returns 0 on success, 1 if either user doesn't exist, -1 on error. id is written to *id_out (which may be NULL) on success */
 int db_store_message(const char *sender, const char *recipient, const uint8_t *body, size_t body_len, int64_t *id_out);
+
+/* Marks a stored message as delivered. Returns 0 success, -1 on error. */
+int db_mark_delivered(int64_t id);
 #endif

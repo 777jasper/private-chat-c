@@ -260,3 +260,29 @@ int db_store_message(const char *sender, const char *recipient, const uint8_t *b
 	sqlite3_finalize(stmt);
 	return result;
 }
+
+int db_mark_delivered(int64_t id){
+
+	if(db == NULL)
+		return -1;
+
+	const char *sql = "UPDATE messages SET delivered = 1 WHERE id = ?;";
+	sqlite3_stmt *stmt = NULL;
+
+	int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+	if(rc!=SQLITE_OK){
+		fprintf(stderr, "db: prepare failed: %s\n", sqlite3_errmsg(db));
+		return -1;
+	}
+
+	sqlite3_bind_int64(stmt, 1, (sqlite3_int64)id);
+
+	rc = sqlite3_step(stmt);
+	int result = 0;
+	if(rc != SQLITE_DONE){
+		fprintf(stderr, "db: mark failed: %s\n", sqlite3_errmsg(db));
+		result = -1;
+	}
+	sqlite3_finalize(stmt);
+	return result;
+}
