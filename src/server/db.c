@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "sqlite3.h"
 #include <time.h>
 #include "db.h"
@@ -281,6 +282,61 @@ int db_mark_delivered(int64_t id){
 	int result = 0;
 	if(rc != SQLITE_DONE){
 		fprintf(stderr, "db: mark failed: %s\n", sqlite3_errmsg(db));
+		result = -1;
+	}
+	sqlite3_finalize(stmt);
+	return result;
+}
+
+int db_next_undelivered(const char *username, int64_t *id, char *sender, size_t sender_size, uint8_t **body, size_t *body_len){
+
+	if(db == NULL)
+		return -1;
+	const char *sql =
+		"SELECT m.id, s.username, m.body FROM messages m "
+		"JOIN users s ON s.id = m.sender_id "
+		"JOIN users r on r.id = m.recipient_id "
+		"WHERE r.username = ? AND m.delivered = 0 "
+		"ORDER BY m.id LIMIT 1;";
+	sqlite3_stmt *stmt = NULL;
+
+	int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+	if(rc!=SQLITE_OK){
+                fprintf(stderr, "db: prepare failed: %s\n", sqlite3_errmsg(db));
+                return -1;
+        }
+
+	sqlite3_bind_text(stmt, 1, username, -1, SQLITE_TRANSIENT);
+
+	rc = sqlite3_step(stmt);
+	int result;
+	if(rc == SQLITE_ROW){
+		const unsigned char *name = sqlite3_column_text(stmt, 1);
+		const void *blob = sqlite3_column_blob(stmt, 2);
+		int n = sqlite3_column_bytes(stmt, 2);
+
+		if(name == NULL || blob == NULL || n <= 0 || strlen((const char *)name)>=sender_size){
+			result = -1;
+		}
+		else{
+			uint8_t *copy = malloc((size_t)n);
+			if(copy == NULL){
+				result = -1;
+			}
+			else{
+				memcpy(copy, blob, (size_t)n);
+				*body = copy;
+				*body_len = (size_t)n;
+				*id = (int64_t)sqlite3_column_int64(stmt, 0);
+				memcpy(sender, name, strlen((const char *)name) + 1);
+				result = 0;
+			}
+		}
+	}
+	else if(rc == SQLITE_DONE)
+		result = 1;
+	else{
+		fprintf(stderr, "db: fetch failed: %s\n", sqlite3_errmsg(db));
 		result = -1;
 	}
 	sqlite3_finalize(stmt);
