@@ -380,3 +380,63 @@ int db_history_start(const char *user, const char *peer, int count, int64_t *sta
 	sqlite3_finalize(stmt);
 	return result;
 }
+
+int db_history_next(const char *user, const char *peer, int64_t after_id,
+                    int64_t *id, int *from_me, int64_t *sent_at,
+                    uint8_t **body, size_t *body_len){
+	if(db == NULL)
+		return -1;
+	const char *sql = 
+		"SELECT m.id, (a.username = ?1), m.sent_at, m.body FROM messages m "
+		"JOIN users a ON a.id = m.sender_id "
+		"JOIN users b ON b.id = m.recipient_id "
+		"WHERE ((a.username = ?! AND b.username = ?2) "
+		"OR (a.username = ?2 AND b.username = ?1)) "
+		"AND m.id > ?3 ORDER BY m.id LIMIT 1;";
+
+	sqlite3_stmt *stmt = NULL;
+	
+	/* Compile the SQL. */
+        int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+        if(rc!=SQLITE_OK){
+                fprintf(stderr,"db: prepare failed: %s\n", sqlite3_errmsg(db));
+                return -1;
+        }
+
+	/* bind three placeholders by number */
+	sqlite3_bind_text(stmt, 1, user, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(stmt, 2, peer, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_int64(stmt, 3, (sqlite3_int64)after_id);
+
+	rc = sqlite3_step(stmt);
+	int result;
+	if(rc == SQLITE_ROW){
+		const void *blob = sqlite3_column_blob(stmt, 3);
+		int n = sqlite3_column_bytes(stmt, 3);
+		if(blob == NULL || n <= 0)
+			result = -1;
+		else{
+			uint8_t *copy = malloc((size_t)n);
+			if(copy == NULL){
+				result = -1;
+			}
+			else{
+				memcpy(copy, blob, (size_t)n);
+				*body = copy;
+				*body_len = (size_t)n;
+				*id = (int64_t)sqlite3_column_int(stmt, 1);
+				*from_me = sqlite3_column_int(stmt, 1);
+				*sent_at = (int64_t)sqlite3_column_int64(stmt,2);
+				result = 0;
+			}
+		}
+	}
+	else if(rc == SQLITE_DONE)
+		result = 1;
+	else{
+		fprintf(stderr, "db: history fetch failed: %s\n", sqlite3_errmsg(db));
+		result = -1;
+	}
+	sqlite3_finalize(stmt);
+	return result;
+}

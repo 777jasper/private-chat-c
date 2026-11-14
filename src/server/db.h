@@ -37,4 +37,10 @@ int db_next_undelivered(const char *username, int64_t *id, char *sender, size_t 
  * Messages with an id greater than *start are the ones to show. Returns 0 on success, -1 on error. */
 int db_history_start(const char *user, const char *peer, int count, int64_t *start);
 
+/* Fetches the oldest message between user and
+ * peer with an id greater than after_id. On success (0), *from_me
+ * is 1 if user sent it, and *body is a malloc'd buffer of *body_len
+ * bytes that the caller must free. Returns 1 if there are no more messages, -1 on error. */
+int db_history_next(const char *user, const char *peer, int64_t aftter_id, int64_t *id, int *from_me, int64_t *sent_at,
+			uint8_t **body, size_t *body_len);
 #endif
