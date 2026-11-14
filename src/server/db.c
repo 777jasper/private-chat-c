@@ -342,3 +342,41 @@ int db_next_undelivered(const char *username, int64_t *id, char *sender, size_t 
 	sqlite3_finalize(stmt);
 	return result;
 }
+
+int db_history_start(const char *user, const char *peer, int count, int64_t *start){
+
+	if(db == NULL || count <= 0)
+		return -1;
+	const char *sql =
+		"SELECT COALESCE((SELECT m.id FROM messages m "
+		"JOIN users a ON a.id = m.sender_id "
+		"JOIN users b ON b.id = m.recipient_id "
+		"WHERE (a.username = ?1 AND b.username = ?2) "
+		"OR (a.username = ?2 AND b.username = ?1) "
+		"ORDER BY m.id DESC LIMIT 1 OFFSET ?3), 0);";
+
+	sqlite3_stmt *stmt = NULL;
+	int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+        if(rc!=SQLITE_OK){
+                fprintf(stderr, "db: prepare failed: %s\n", sqlite3_errmsg(db));
+                return -1;
+        }
+
+	sqlite3_bind_text(stmt, 1, user, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(stmt, 2, peer, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_int(stmt, 3, count);
+
+	rc = sqlite3_step(stmt);
+	int result;
+	if(rc == SQLITE_ROW){
+		*start = (int64_t)sqlite3_column_int64(stmt, 0);
+		result = 0;
+	}
+	else{
+		fprintf(stderr, "db: history lookup failed: %s\n", sqlite3_errmsg(db));
+		return -1;
+	}
+
+	sqlite3_finalize(stmt);
+	return result;
+}

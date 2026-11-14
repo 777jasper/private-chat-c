@@ -32,4 +32,9 @@ int db_mark_delivered(int64_t id);
 
 /* Fetches the oldest undelivered message for username. On success (0) *id is the message id, sender holds the sender's name, and *body is a malloc'd buffer of *body_len bytes that the caller must free. Returns 1 if nothing is waiting, -1 on error. */
 int db_next_undelivered(const char *username, int64_t *id, char *sender, size_t sender_size, uint8_t **body, size_t *body_len);
+
+/* Finds the message id just before the newest 'count' messages between user and peer (0 if there are fewer).
+ * Messages with an id greater than *start are the ones to show. Returns 0 on success, -1 on error. */
+int db_history_start(const char *user, const char *peer, int count, int64_t *start);
+
 #endif
