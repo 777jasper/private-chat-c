@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include "net_io.h"
@@ -22,6 +23,8 @@
 #define USERNAME_MAX 32
 #define PASSWORD_MIN 8
 #define PASSWORD_MAX 128
+
+#define SEND_TIMEOUT_SEC 10
 
 #define HISTORY_COUNT 50
 
@@ -404,6 +407,12 @@ static void *client_thread(void *arg){
 	/* copy the descriptor out of the block main gave us, then free it */
 	int client_fd = *(int *)arg;
 	free(arg);
+
+	struct timeval tv;
+	tv.tv_sec = SEND_TIMEOUT_SEC;
+	tv.tv_usec = 0;
+	if(setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv) == -1)
+		perror("setsockopt");
 
 	conn_t *c = conn_create(client_fd);
 	if(c==NULL){
