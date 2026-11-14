@@ -26,7 +26,10 @@ typedef enum{
 	MSG_DELIVER = 7, /* server -> client: sender 00 body. */
 	MSG_SET_KEY = 8, /* client -> server: 32 byte public key. */
 	MSG_GET_KEY = 9, /* client -> server: username. */
-	MSG_KEY = 10 /* server -> client: username 00 key (32 bytes) */
+	MSG_KEY = 10, /* server -> client: username 00 key (32 bytes) */
+	MSG_HISTORY_REQ = 11,  /* client -> server: peer username (no 00) */
+	MSG_HISTORY_ITEM = 12, /* server -> client: peer 00 from_me(1) sent_at(8) body */
+	MSG_HISTORY_END = 13   /* server -> client: peer username */
 }msg_type_t;
 
 #endif

@@ -23,6 +23,8 @@
 #define PASSWORD_MIN 8
 #define PASSWORD_MAX 128
 
+#define HISTORY_COUNT 50
+
 typedef struct{
 	int logged_in; /* 0 = no, 1 = yes */
 	char username[USERNAME_MAX+1]; /* valid only when logged_in is 1 */
@@ -290,6 +292,69 @@ static int handle_get_key(conn_t *c, const uint8_t *payload, uint32_t len, const
 	return conn_send(c, MSG_KEY, out, (uint32_t)(len + 1 + DB_PUBKEY_SIZE));
 }
 
+/* Handles one MSG_HISTORY_REQ frame. Returns 0 on success (or after an  error reply), -1 if the connection is broken. */
+static int handle_history(conn_t *c, const uint8_t *payload, uint32_t len, const session_t *sess){
+	if(!sess->logged_in)
+		return send_text(c, MSG_ERROR, "not logged in");
+	if(len < USERNAME_MIN || len > USERNAME_MAX)
+		return send_text(c, MSG_ERROR, "invalid username");
+	for(size_t i = 0; i < len; i++){
+		unsigned char ch = payload[i];
+		if(!isalnum(ch) && ch!='_')
+			return send_text(c, MSG_ERROR, "invalid username");
+	}
+	char peer[USERNAME_MAX + 1];
+	memcpy(peer, payload, len);
+	peer[len] = '\0';
+
+	int64_t after;
+	if(db_history_start(sess->username, peer, HISTORY_COUNT, &after) == -1)
+		return send_text(c, MSG_ERROR, "server error");
+	int db_failed = 0;
+
+	for(;;){
+		int64_t id, sent_at;
+		int from_me;
+		uint8_t *body;
+		size_t body_len;
+
+		int rc = db_history_next(sess->username, peer, after, &id, &from_me, &sent_at, &body, &body_len);
+		if(rc == -1)
+			db_failed = 1;
+		if(rc != 0)
+			break;
+		after = id; /* always advance, even if we skip this one */
+		size_t p_len = len; /* the peer name length */
+		size_t total = p_len + 1 + 1 + 8 + body_len;
+		if(total > MAX_PAYLOAD){
+			free(body);
+			continue;
+		}
+		uint8_t *out = malloc(total);
+		if(out == NULL) {
+			free(body);
+			db_failed = 1;
+			break;
+		}
+
+		/* fill the frame */
+		memcpy(out, peer, p_len + 1);
+		out[p_len + 1] = (uint8_t)(from_me ? 1 : 0);
+		for(int i = 0; i < 8; i++)
+			out[p_len + 2 + i] = (uint8_t)((uint64_t)sent_at >> (56 - 8 * i));
+		memcpy(out + p_len + 10, body, body_len);
+		free(body);
+
+		int sent = conn_send(c, MSG_HISTORY_ITEM, out, (uint32_t)total);
+		free(out);
+		if(sent == -1)
+			return -1;
+	}
+		if(db_failed)
+			return send_text(c,MSG_ERROR, "server error");
+		return conn_send(c, MSG_HISTORY_END, (const uint8_t *)peer, (uint32_t)len);
+}
+
 /* serves one client until it disconnects */
 static void handle_client(conn_t *c){
 
@@ -318,6 +383,8 @@ static void handle_client(conn_t *c){
 					  break;
 			case MSG_GET_KEY: rc = handle_get_key(c, payload, len, &sess);
 					  break;
+			case MSG_HISTORY_REQ: rc = handle_history(c, payload, len, &sess);
+					      break;
 			default:	rc = send_text(c, MSG_ERROR, "unsupported request");
 					break;
 		}
