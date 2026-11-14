@@ -9,6 +9,7 @@
 #include "protocol.h"
 #include <poll.h>
 #include <errno.h>
+#include <time.h>
 #include "keys.h"
 #include "msgcrypt.h"
 
@@ -216,7 +217,32 @@ static void pending_free_all(chat_ctx_t *ctx){
 	ctx->pending_count = 0;
 }
 
+/* Decrypts and prints one history item */
+static void show_history_item(const chat_ctx_t *ctx, const char *peer, int from_me, uint64_t sent_at, const uint8_t *body, size_t body_len){
+	/* look up the peer's key */
+	const unsigned char *their_pk = cache_find(ctx, peer);
+	if(their_pk == NULL){
+		printf("[history item with %s skipped: no key]\n", peer);
+		return ;
+	}
 
+	/* format the time as text */
+	char when[32];
+	time_t t = (time_t)sent_at;
+	struct tm tmv;
+	if (localtime_r(&t, &tmv) == NULL || strftime(when, sizeof when, "%Y-%m-%d %H:%M", &tmv) == 0)
+		snprintf(when, sizeof when, "?");
+
+	/* decrypt, always with the PEER's public key and MY secret key */
+	uint8_t *plain;
+	size_t plain_len;
+	if(msgcrypt_decrypt(body, body_len, their_pk, ctx->sk, &plain, &plain_len) == -1){
+		printf("[%s] %s: [could not decrypt]\n", when, from_me ? "me" : peer);
+		return;
+	}
+	printf("[%s] %s: %.*s\n", when, from_me ? "me" : peer, (int)plain_len, (const char *)plain);
+	free(plain);
+}
 /* Handles one frame from the server. Returns 0 to keep going, -1 if the connection is gone. */
 static int handle_incoming(chat_ctx_t *ctx)
 {
@@ -274,6 +300,24 @@ static int handle_incoming(chat_ctx_t *ctx)
 
 		}
 	}
+	else if(type == MSG_HISTORY_ITEM){
+		const uint8_t *sep = (len > 0)? memchr(payload, 0, len) : NULL;
+		if(sep == NULL || (size_t)(sep-payload) > KC_NAME_SIZE -1 || len - (size_t)(sep-payload) -1 < 9){
+			printf("malformed history item\n");
+		}
+		else{
+			size_t name_len = (size_t)(sep-payload);
+			const uint8_t *p = sep + 1; /* start of from_me */
+			int from_me = p[0];
+			uint64_t sent_at = 0;
+			for(int i = 0; i < 8; i++)
+				sent_at = (sent_at << 8) | p[1 + i];
+			show_history_item(ctx, (const char *)payload, from_me, sent_at, p + 9, len - name_len - 1 - 9);
+		}
+	}
+	else if(type == MSG_HISTORY_END){
+		printf("--- end of history with %.*s ---\n", (int)len, payload ? (const char *)payload: "");
+	}
 
 	free(payload);
 	return 0;
@@ -298,6 +342,22 @@ static int handle_typed(chat_ctx_t *ctx, char *line){
 			return 0;
 		}
 		int rc = send_frame(ctx->fd, MSG_GET_KEY, (const uint8_t *)name, (uint32_t)n);
+		return (rc == 0) ? 0 : -1;
+	}
+
+	/* "/history name" command. */
+	if(strncmp(line, "/history ", 9) == 0){
+		const char *name = line + 9;
+		size_t n = strlen(name);
+		if(n == 0){
+			printf("usage: /history username\n");
+			return 0;
+		}
+		if(cache_find(ctx, name) == NULL){
+			printf("no key for %s yet; type /key %s first\n", name, name);
+			return 0;
+		}
+		int rc = send_frame(ctx->fd, MSG_HISTORY_REQ, (const uint8_t *)name, (uint32_t)n);
 		return (rc == 0) ? 0 : -1;
 	}
 

@@ -390,7 +390,7 @@ int db_history_next(const char *user, const char *peer, int64_t after_id,
 		"SELECT m.id, (a.username = ?1), m.sent_at, m.body FROM messages m "
 		"JOIN users a ON a.id = m.sender_id "
 		"JOIN users b ON b.id = m.recipient_id "
-		"WHERE ((a.username = ?! AND b.username = ?2) "
+		"WHERE ((a.username = ?1 AND b.username = ?2) "
 		"OR (a.username = ?2 AND b.username = ?1)) "
 		"AND m.id > ?3 ORDER BY m.id LIMIT 1;";
 
@@ -424,7 +424,7 @@ int db_history_next(const char *user, const char *peer, int64_t after_id,
 				memcpy(copy, blob, (size_t)n);
 				*body = copy;
 				*body_len = (size_t)n;
-				*id = (int64_t)sqlite3_column_int(stmt, 1);
+				*id = (int64_t)sqlite3_column_int(stmt, 0);
 				*from_me = sqlite3_column_int(stmt, 1);
 				*sent_at = (int64_t)sqlite3_column_int64(stmt,2);
 				result = 0;

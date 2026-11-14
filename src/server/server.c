@@ -312,7 +312,7 @@ static int handle_history(conn_t *c, const uint8_t *payload, uint32_t len, const
 		return send_text(c, MSG_ERROR, "server error");
 	int db_failed = 0;
 
-	for(;;){
+	for(int n = 0; n < HISTORY_COUNT; n++){
 		int64_t id, sent_at;
 		int from_me;
 		uint8_t *body;
