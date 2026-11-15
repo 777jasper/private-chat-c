@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/socket.h>
 #include "conn.h"
 #include "net_io.h"
 
@@ -25,8 +26,12 @@ int conn_send(conn_t *c, uint8_t type, const uint8_t *payload, uint32_t len){
 	int rc = -1;
 
 	pthread_mutex_lock(&c->send_lock);
-	if(c->alive)
+	if(c->alive){
 		rc = send_frame(c->fd, type, payload, len);
+		if(rc == -1)
+			shutdown(c->fd, SHUT_RDWR); /* do not set alive = 0 and do not close here: the owner thread does that in
+						       conn_shutdown */
+	}
 	pthread_mutex_unlock(&c->send_lock);
 
 	return rc;
