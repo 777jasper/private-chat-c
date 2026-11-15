@@ -1,5 +1,9 @@
 #include <string.h>
 #include <sodium.h>
+#include <stdio.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "auth.h"
 
 /* Compile-time safety check: our buffer size must be big enough for libsodium. */
@@ -8,6 +12,9 @@ _Static_assert(AUTH_HASH_SIZE >= crypto_pwhash_STRBYTES,
 
 /* A valid hash of a throwaway password, made once at startup. */
 static char dummy_hash[AUTH_HASH_SIZE];
+
+static unsigned char server_pk[crypto_box_PUBLICKEYBYTES];
+static unsigned char server_sk[crypto_box_SECRETKEYBYTES];
 
 int auth_init(void){
 	if(sodium_init() < 0)
@@ -39,4 +46,61 @@ int auth_verify_password(const char *stored_hash, const char *password){
 void auth_dummy_verify(const char *password){
 	int rc = crypto_pwhash_str_verify(dummy_hash, password, strlen(password));
 	(void)rc;
+}
+
+int auth_server_keys_init(const char *sk_path, const char *pk_path){
+
+	int fd = open(sk_path, O_RDONLY);
+
+	if(fd >= 0){
+		/* the key file exists, so read it */
+		ssize_t n = read(fd, server_sk, sizeof server_sk);
+                close(fd);
+                if (n != (ssize_t)sizeof server_sk) {
+			fprintf(stderr, "server: damaged key file %s\n", sk_path);
+			sodium_memzero(server_sk, sizeof server_sk);
+			return -1;
+		}
+		crypto_scalarmult_base(server_pk, server_sk);
+	}
+	else if(errno == ENOENT){
+		/* first run, so make a keypair and save the secret half */
+		crypto_box_keypair(server_pk, server_sk);
+		fd = open(sk_path, O_WRONLY | O_CREAT | O_EXCL, 0600);
+		if (fd == -1) {
+			perror("server: create key file");
+			sodium_memzero(server_sk, sizeof server_sk);
+			return -1;
+		}
+		ssize_t w = write(fd, server_sk, sizeof server_sk);
+                close(fd);
+                if (w != (ssize_t)sizeof server_sk) {
+			unlink(sk_path);
+                        sodium_memzero(server_sk, sizeof server_sk);
+                        return -1;
+		}
+	}
+	else{
+		perror("server: open key file");
+		return -1;
+	}
+
+	/* write the public key (overwrite is fine, it is derived) */
+	fd = open(pk_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if(fd == -1){
+		perror("server: write public key");
+		sodium_memzero(server_sk, sizeof server_sk);
+		return -1;
+	}
+	ssize_t pw = write(fd, server_pk, sizeof server_pk);
+	close(fd);
+	if(pw != (ssize_t)sizeof server_pk){
+		sodium_memzero(server_sk, sizeof server_sk);
+		return -1;
+	}
+	return 0;
+}
+
+void auth_cleanup(void){
+	sodium_memzero(server_sk, sizeof server_sk);
 }

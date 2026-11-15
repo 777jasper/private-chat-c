@@ -20,5 +20,11 @@ int auth_verify_password(const char *stored_hash, const char *password);
    time whether or not the user exists. */
 void auth_dummy_verify(const char *password);
 
+/* Loads the server keypair from sk_path, or creates it if the file is missing, and writes the public key to pk_path.
+ * Call after auth_init(). Returns 0 on success, -1 on failure. */
+int auth_server_keys_init(const char *sk_path, const char *pk_path);
+
+/* Wipes the server's secret key from memory. */
+void auth_cleanup(void);
 #endif
 

@@ -492,7 +492,11 @@ int main(void){
 		return 1;
 	}
 
-
+	if(auth_server_keys_init("data/server.key", "data/server.pub") == -1){
+		fprintf(stderr, "server: key setup failed\n");
+		db_close();
+		return 1;
+	}
 
 	int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if(listen_fd < 0){
@@ -578,6 +582,7 @@ int main(void){
 	
 	if(atomic_load(&active_clients) == 0)
 		db_close(); // threads may still use the database
+	auth_cleanup();
 	return 0;
 }
 
