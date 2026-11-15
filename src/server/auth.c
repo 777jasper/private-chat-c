@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include "auth.h"
 
 /* Compile-time safety check: our buffer size must be big enough for libsodium. */
@@ -108,4 +109,32 @@ void auth_cleanup(void){
 void auth_random_bytes(unsigned char *buf, size_t n){
 
     randombytes_buf(buf, n);
+}
+
+int auth_open_sealed(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len){
+
+	if (in_len < crypto_box_SEALBYTES)
+		return -1;
+
+	size_t p_len = in_len - crypto_box_SEALBYTES;
+	uint8_t *buf = malloc(p_len > 0 ? p_len : 1);
+	if (buf == NULL)
+		return -1;
+
+	if (crypto_box_seal_open(buf, in, in_len, server_pk, server_sk) != 0){
+		sodium_memzero(buf, p_len);
+		free(buf);
+		return -1;
+	}
+
+	*out = buf;
+	*out_len = p_len;
+	return 0;
+}
+
+void auth_free_secret(uint8_t *p, size_t n){
+	if(p!=NULL){
+		sodium_memzero(p, n);
+		free(p);
+	}
 }

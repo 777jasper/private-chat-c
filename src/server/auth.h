@@ -2,6 +2,7 @@
 #define AUTH_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 /* Size of the buffer that holds a hashed password (text plus the final 00). */
 #define AUTH_HASH_SIZE 128
@@ -31,6 +32,13 @@ void auth_cleanup(void);
 
 /* Fills buf with n cryptographically secure random bytes. */
 void auth_random_bytes(unsigned char *buf, size_t n);
+
+/* Opens a sealed box addressed to the server. On success (0), *out is a malloc'd buffer of *out_len bytes that the caller
+ * must release with auth_free_secret. Returns -1 on failure. */
+int auth_open_sealed(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+
+/* Wipes n bytes at p, then frees p. p may be NULL. */
+void auth_free_secret(uint8_t *p, size_t n);
 
 #endif
 
