@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <signal.h>
 #include "net_io.h"
 #include "protocol.h"
 #include "db.h"
@@ -32,7 +33,11 @@
 #define MAX_CLIENTS 128
 
 static atomic_int active_clients; /* static varaibles start at 0 */
-
+static volatile sig_atomic_t stop_requested = 0;
+static void on_signal(int sig){
+	(void)sig; /* we don't care which signal it was */
+	stop_requested = 1;
+}
 
 typedef struct{
 	int logged_in; /* 0 = no, 1 = yes */
@@ -410,6 +415,14 @@ static void handle_client(conn_t *c){
 /* Runs in its own thread, one per client */
 static void *client_thread(void *arg){
 
+	/* block SIGINT and SIGTERM in this thread */
+	sigset_t set;
+	sigemptyset(&set);
+	sigaddset(&set, SIGINT);
+	sigaddset(&set, SIGTERM);
+	pthread_sigmask(SIG_BLOCK, &set, NULL);
+
+
 	/* copy the descriptor out of the block main gave us, then free it */
 	int client_fd = *(int *)arg;
 	free(arg);
@@ -479,7 +492,15 @@ int main(void){
 
 	printf("Server listening on 127.0.0.1:%d\n", PORT);
 
-	for(;;){
+	struct sigaction sa;
+	memset(&sa, 0, sizeof sa);
+	sa.sa_handler = on_signal;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;	/* no SA_RESTART: accept must be interrupted */
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
+
+	while(!stop_requested){
 		int client_fd = accept(listen_fd, NULL, NULL);
 		if(client_fd<0){
 			if(errno == EINTR)
@@ -520,7 +541,8 @@ int main(void){
 	}
 
 	close(listen_fd); // close listen_fd
-	db_close(); // close the database
+	if(atomic_load(&active_clients) == 0)
+		db_close(); // threads may still use the database
 	return 0;
 }
 
