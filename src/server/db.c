@@ -142,7 +142,7 @@ int db_set_pubkey(const char *username, const unsigned char *key){
 	if(db == NULL)
 		return -1;
 
-	const char *sql = "UPDATE users SET pubkey = ? WHERE username = ?;";
+	const char *sql = "UPDATE users SET pubkey = ? WHERE username = ? RETURNING id;";
 	sqlite3_stmt *stmt = NULL;
 
 	/* Compile the sql */
@@ -157,8 +157,19 @@ int db_set_pubkey(const char *username, const unsigned char *key){
 
 	rc = sqlite3_step(stmt);
 	int result;
-	if(rc == SQLITE_DONE)
-		result = (sqlite3_changes(db) == 1) ? 0 : 1;
+	if(rc == SQLITE_ROW){
+		rc =sqlite3_step(stmt); /* let the statement finish */
+		if(rc == SQLITE_DONE){
+			result = 0;
+		}
+		else{
+			fprintf(stderr, "db: update failed: %s\n", sqlite3_errmsg(db));
+			result = -1;
+		}
+	}
+	else if(rc == SQLITE_DONE){
+		result = 1; /* no such user */
+	}
 	else{
 		fprintf(stderr, "db: update failed: %s\n", sqlite3_errmsg(db));
 		result = -1;
