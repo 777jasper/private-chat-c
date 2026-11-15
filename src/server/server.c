@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <signal.h>
+#include <poll.h>
 #include "net_io.h"
 #include "protocol.h"
 #include "db.h"
@@ -379,6 +380,22 @@ static void handle_client(conn_t *c){
 		uint8_t *payload;
 		uint32_t len;
 
+		/* leave if the server is shutting down */
+		if(stop_requested)
+			break;
+
+		/* wait upto 500 ms for data on this client's socket */
+		struct pollfd pfd;
+		pfd.fd = c->fd;
+		pfd.events = POLLIN;
+		int pr = poll(&pfd, 1, 500);
+		if(pr < 0){
+			if(errno == EINTR)
+				continue;
+			break;
+		}
+		if(pr == 0)
+			continue; /* timed out: loop, re-check the flag  */
 		if(recv_frame(c->fd, &type, &payload, &len)<0){
 			
 			break;
@@ -541,6 +558,10 @@ int main(void){
 	}
 
 	close(listen_fd); // close listen_fd
+	
+	for(int i = 0; i< 200 && atomic_load(&active_clients) > 0; i++)
+		usleep(100000);	/* 100 ms, upto 20 s */
+	
 	if(atomic_load(&active_clients) == 0)
 		db_close(); // threads may still use the database
 	return 0;
