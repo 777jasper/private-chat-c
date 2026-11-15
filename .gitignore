@@ -47,3 +47,4 @@ secrets/
 core.*
 vgcore.*
 .gdb_history
+tmp/
