@@ -6,15 +6,20 @@ PW=password123
 BIN=./build
 OUT=tmp/stress
 
+LOGIN_WAIT=${LOGIN_WAIT:-5}        # seconds to let listeners log in
+DELIVER_WAIT=${DELIVER_WAIT:-2}    # seconds to let deliveries arrive
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
 # Step 1: register the 2N users (seq -w pads: 01 02 ... 12).
 # On a repeat run the server answers "username unavailable"; we hide that.
-for i in $(seq -w 1 $N); do
-    $BIN/test_register_client register "l$i" $PW > /dev/null
-    $BIN/test_register_client register "s$i" $PW > /dev/null
-done
+if [ -z "$SKIP_REGISTER" ]; then
+    for i in $(seq -w 1 $N); do
+        $BIN/test_register_client register "l$i" $PW > /dev/null
+        $BIN/test_register_client register "s$i" $PW > /dev/null
+    done
+fi
 
 # Step 2: start all listeners in the background and remember their process ids.
 lpids=()
@@ -24,7 +29,7 @@ for i in $(seq -w 1 $N); do
 done
 
 # Step 3: give the listeners time to log in.
-sleep 5
+sleep "$LOGIN_WAIT"
 
 # Step 4: start all senders at once, then wait for just those.
 spids=()
@@ -35,7 +40,7 @@ done
 wait "${spids[@]}"
 
 # Step 5: let the deliveries arrive, then stop the listeners.
-sleep 2
+sleep "$DELIVER_WAIT"
 kill "${lpids[@]}" 2>/dev/null
 wait "${lpids[@]}" 2>/dev/null
 

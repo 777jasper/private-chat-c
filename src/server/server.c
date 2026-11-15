@@ -12,6 +12,7 @@
 #include <stdatomic.h>
 #include <signal.h>
 #include <poll.h>
+#include <time.h>
 #include "net_io.h"
 #include "protocol.h"
 #include "db.h"
@@ -28,10 +29,12 @@
 #define PASSWORD_MAX 128
 
 #define SEND_TIMEOUT_SEC 10
-
 #define HISTORY_COUNT 50
-
 #define MAX_CLIENTS 128
+
+#define RECV_TIMEOUT_SEC 10	/* a started frame must finish within this */
+#define LOGIN_DEADLINE_SEC 30     /* a new connection must log in within this */
+
 
 static atomic_int active_clients; /* static varaibles start at 0 */
 static volatile sig_atomic_t stop_requested = 0;
@@ -374,6 +377,8 @@ static int handle_history(conn_t *c, const uint8_t *payload, uint32_t len, const
 static void handle_client(conn_t *c){
 
 	session_t sess = {0};
+	struct timespec t0;
+	clock_gettime(CLOCK_MONOTONIC, &t0);
 
 	for(;;){
 		uint8_t type;
@@ -382,6 +387,11 @@ static void handle_client(conn_t *c){
 
 		/* leave if the server is shutting down */
 		if(stop_requested)
+			break;
+
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		if(!sess.logged_in && now.tv_sec - t0.tv_sec >= LOGIN_DEADLINE_SEC)
 			break;
 
 		/* wait upto 500 ms for data on this client's socket */
@@ -448,6 +458,10 @@ static void *client_thread(void *arg){
 	tv.tv_sec = SEND_TIMEOUT_SEC;
 	tv.tv_usec = 0;
 	if(setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv) == -1)
+		perror("setsockopt");
+
+	tv.tv_sec = RECV_TIMEOUT_SEC;
+	if(setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) == -1)
 		perror("setsockopt");
 
 	conn_t *c = conn_create(client_fd);
