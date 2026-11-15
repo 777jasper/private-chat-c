@@ -104,3 +104,8 @@ int auth_server_keys_init(const char *sk_path, const char *pk_path){
 void auth_cleanup(void){
 	sodium_memzero(server_sk, sizeof server_sk);
 }
+
+void auth_random_bytes(unsigned char *buf, size_t n){
+
+    randombytes_buf(buf, n);
+}

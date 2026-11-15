@@ -6,6 +6,8 @@
 /* Size of the buffer that holds a hashed password (text plus the final 00). */
 #define AUTH_HASH_SIZE 128
 
+#define AUTH_CHALLENGE_SIZE 32
+
 /* Initializes libsodium. Call once at startup. Returns 0 on success, -1 on failure. */
 int auth_init(void);
 
@@ -26,5 +28,9 @@ int auth_server_keys_init(const char *sk_path, const char *pk_path);
 
 /* Wipes the server's secret key from memory. */
 void auth_cleanup(void);
+
+/* Fills buf with n cryptographically secure random bytes. */
+void auth_random_bytes(unsigned char *buf, size_t n);
+
 #endif
 

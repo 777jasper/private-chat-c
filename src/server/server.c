@@ -46,6 +46,8 @@ static void on_signal(int sig){
 typedef struct{
 	int logged_in; /* 0 = no, 1 = yes */
 	char username[USERNAME_MAX+1]; /* valid only when logged_in is 1 */
+	unsigned char challenge[AUTH_CHALLENGE_SIZE];
+       	int have_challenge;	/* 1 once a challenge has been issued */
 }session_t;
 
 
@@ -373,6 +375,16 @@ static int handle_history(conn_t *c, const uint8_t *payload, uint32_t len, const
 		return conn_send(c, MSG_HISTORY_END, (const uint8_t *)peer, (uint32_t)len);
 }
 
+/* Handles one MSG_CHALLENGE_REQ frame. Returns 0 if a reply was sent, -1 if the connection is broken. */
+static int handle_challenge(conn_t *c, uint32_t len, session_t *sess){
+
+	if(len != 0)
+		return send_text(c, MSG_ERROR, "invalid request");
+	auth_random_bytes(sess->challenge, sizeof sess->challenge);
+	sess->have_challenge = 1;
+	return conn_send(c, MSG_CHALLENGE, sess->challenge, sizeof sess->challenge);
+}
+
 /* serves one client until it disconnects */
 static void handle_client(conn_t *c){
 
@@ -426,6 +438,8 @@ static void handle_client(conn_t *c){
 					  break;
 			case MSG_HISTORY_REQ: rc = handle_history(c, payload, len, &sess);
 					      break;
+			case MSG_CHALLENGE_REQ: rc = handle_challenge(c, len, &sess);
+						break;
 			default:	rc = send_text(c, MSG_ERROR, "unsupported request");
 					break;
 		}
