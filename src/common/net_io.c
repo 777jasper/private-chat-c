@@ -4,15 +4,26 @@
 #include<errno.h>
 #include<sys/types.h>
 #include<sys/socket.h>
+#include<time.h>
 #include"net_io.h"
 #include"protocol.h"
 
+#define SEND_DEADLINE_SEC 10 /* one send_all call may take at most this long overall */
 int send_all(int fd, const void *buf, size_t len){
 
 	const uint8_t *p = buf; /* p walks through the data as bytes */
 	size_t sent = 0; /* how many bytes have gone out so far */
 
+	struct timespec t0;
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+
 	while(sent<len){
+		
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		if(now.tv_sec - t0.tv_sec >= SEND_DEADLINE_SEC)
+			return -1;
+				
 		ssize_t n = send(fd, p+sent, len-sent, MSG_NOSIGNAL);
 
 		if(n<0){

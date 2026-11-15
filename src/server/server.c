@@ -28,7 +28,7 @@
 #define PASSWORD_MIN 8
 #define PASSWORD_MAX 128
 
-#define SEND_TIMEOUT_SEC 10
+#define SEND_TIMEOUT_SEC 5
 #define HISTORY_COUNT 50
 #define MAX_CLIENTS 128
 
