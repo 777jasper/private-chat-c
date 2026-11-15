@@ -98,3 +98,41 @@ int keys_load_or_create(const char *username,
     
     return 0;
 }
+
+int keys_load_server_pk(unsigned char pk[crypto_box_PUBLICKEYBYTES]){
+
+	const char *home = getenv("HOME");
+	if(home == NULL){
+		fprintf(stderr, "keys: HOME is not sent\n");
+		return -1;
+	}
+
+	char path[600];
+
+	/* build the path with snprintf and treat truncation as failure. */
+	int b = snprintf(path, sizeof path, "%s/.chatapp/server.pub", home);
+	if(b<0 || (size_t)b >= sizeof path){
+		fprintf(stderr, "keys: path too long\n");
+		return -1;
+	}
+
+	/* open the file read-only */
+	int fd = open(path, O_RDONLY);
+	if(fd < 0){
+		fprintf(stderr, "keys: cannot open %s\n"
+				"      copy the server's data/server.pub there first\n", path);
+		return -1;
+	}
+
+	/* read ONE byte more than a key, so a too-long file is noticed */
+	unsigned char buf[crypto_box_PUBLICKEYBYTES + 1];
+	ssize_t n = read(fd, buf, sizeof buf);
+	close(fd);
+
+	if( n!=(ssize_t)crypto_box_PUBLICKEYBYTES){
+		fprintf(stderr, "keys: %s is not a 32-byte key\n", path);
+		return -1;
+	}
+	memcpy(pk, buf, crypto_box_PUBLICKEYBYTES);
+	return 0;
+}
