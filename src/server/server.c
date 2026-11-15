@@ -9,6 +9,7 @@
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include "net_io.h"
 #include "protocol.h"
 #include "db.h"
@@ -27,6 +28,11 @@
 #define SEND_TIMEOUT_SEC 10
 
 #define HISTORY_COUNT 50
+
+#define MAX_CLIENTS 128
+
+static atomic_int active_clients; /* static varaibles start at 0 */
+
 
 typedef struct{
 	int logged_in; /* 0 = no, 1 = yes */
@@ -416,6 +422,7 @@ static void *client_thread(void *arg){
 
 	conn_t *c = conn_create(client_fd);
 	if(c==NULL){
+		atomic_fetch_sub(&active_clients, 1);
 		close(client_fd);
 		return NULL;
 	}
@@ -423,6 +430,7 @@ static void *client_thread(void *arg){
 	registry_remove(c);
 	conn_shutdown(c); /* closes the socket exactly once. */
 	conn_unref(c); /* drops our reference; frees c at zero. */
+	atomic_fetch_sub(&active_clients, 1);
 	return NULL;
 }
 
@@ -482,8 +490,15 @@ int main(void){
 			}
 		}
 
+		if(atomic_fetch_add(&active_clients, 1) >= MAX_CLIENTS){
+			atomic_fetch_sub(&active_clients, 1);
+			close(client_fd);
+			continue;
+		}
+
 		int *arg = malloc(sizeof *arg);
 		if(arg == NULL){
+			atomic_fetch_sub(&active_clients, 1);
 			close(client_fd);
 			continue;
 		}
@@ -497,6 +512,7 @@ int main(void){
 		if(rc!=0){
 			fprintf(stderr, "pthread_create: %s\n", strerror(rc));
 			free(arg);
+			atomic_fetch_sub(&active_clients, 1);
 			close(client_fd);
 			continue;
 		}
