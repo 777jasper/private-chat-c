@@ -31,7 +31,9 @@ typedef enum{
 	MSG_HISTORY_ITEM = 12, /* server -> client: peer 00 from_me(1) sent_at(8) body */
 	MSG_HISTORY_END = 13,   /* server -> client: peer username */
 	MSG_CHALLENGE_REQ = 14, /* client -> server: empty */
-	MSG_CHALLENGE = 15 /* server -> client: 32 random bytes */
+	MSG_CHALLENGE = 15, /* server -> client: 32 random bytes */
+	MSG_LOGIN_SEALED = 16, /* client -> server: sealed(challenge | username 00 password 00) */
+	MSG_REGISTER_SEALED = 17	/* same payload format */
 }msg_type_t;
 
 #endif

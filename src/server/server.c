@@ -385,6 +385,40 @@ static int handle_challenge(conn_t *c, uint32_t len, session_t *sess){
 	return conn_send(c, MSG_CHALLENGE, sess->challenge, sizeof sess->challenge);
 }
 
+/* Handles MSG_LOGIN_SEALED (is_login = 1) and MSG_REGISTER_SEALED (is_login = 0).
+ * Returns 0 if a reply was sent, -1 if the connection is broken. */
+static int handle_sealed(conn_t *c, const uint8_t *payload, uint32_t len, session_t *sess, int is_login){
+
+	if (!sess->have_challenge)
+		return send_text(c, MSG_ERROR, "invalid request");
+
+	/* take a copy of the challenge and burn it */
+	uint8_t challenge[AUTH_CHALLENGE_SIZE];
+	memcpy(challenge, sess->challenge, sizeof challenge);
+	sess->have_challenge = 0;
+
+	/* open the box */
+	uint8_t *plain;
+	size_t   plain_len;
+	if (auth_open_sealed(payload, len, &plain, &plain_len) == -1)
+		return send_text(c, MSG_ERROR, "invalid username or password");
+
+	/* check the challenge. The length test comes first so memcmp never reads past the data  */
+	if(plain_len <= AUTH_CHALLENGE_SIZE ||
+			memcmp(plain, challenge, AUTH_CHALLENGE_SIZE) != 0){
+		auth_free_secret(plain, plain_len);
+		return send_text(c, MSG_ERROR, "invalid username or password");
+	}
+
+	/* pass the inner credentials to the existing handlers */
+	const uint8_t *inner = plain + AUTH_CHALLENGE_SIZE;
+	uint32_t inner_len = (uint32_t)(plain_len - AUTH_CHALLENGE_SIZE);
+	int rc = is_login ? handle_login(c, inner, inner_len, sess) : handle_register(c, inner, inner_len);
+
+	auth_free_secret(plain, plain_len);
+	return rc;
+}
+
 /* serves one client until it disconnects */
 static void handle_client(conn_t *c){
 
@@ -440,6 +474,10 @@ static void handle_client(conn_t *c){
 					      break;
 			case MSG_CHALLENGE_REQ: rc = handle_challenge(c, len, &sess);
 						break;
+			case MSG_LOGIN_SEALED: rc = handle_sealed(c, payload, len, &sess, 1);
+					       break;
+			case MSG_REGISTER_SEALED: rc = handle_sealed(c, payload, len, &sess, 0);
+						  break;
 			default:	rc = send_text(c, MSG_ERROR, "unsupported request");
 					break;
 		}
