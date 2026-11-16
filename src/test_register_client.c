@@ -6,6 +6,9 @@
 #include <netinet/in.h>
 #include "net_io.h"
 #include "protocol.h"
+#include "keys.h"
+#include "msgcrypt.h"
+#include "sealedauth.h"
 
 #define PORT 5555
 
@@ -31,32 +34,21 @@ int main(int argc, char *argv[])
 	    return 1;
     }
 
-    size_t u_len = strlen(username);
-    size_t p_len = strlen(password);
-    size_t total = u_len + 1 + p_len + 1;   /* both texts plus both 00 bytes */
-
-    if (total > MAX_PAYLOAD) {
-        fprintf(stderr, "input too long\n");
-        return 1;
+    if(sodium_init() < 0){
+	    fprintf(stderr, "libsodium failed to initialize\n");
+	    return 1;
     }
 
-    uint8_t *payload = malloc(total);
-    if (payload == NULL) {
-        perror("malloc");
-        return 1;
-    }
-    
-    /* copy the username INCLUDING its 00 into the start of payload. */
-    memcpy(payload, username, u_len + 1);
-    
-    /* copy the password INCLUDING its 00 right after it. */
-    memcpy(payload + u_len + 1, password, p_len + 1);
+    uint8_t server_pk[crypto_box_PUBLICKEYBYTES];
+    if(keys_load_server_pk(server_pk) == -1)
+	    return 1;
+    uint8_t sealed_type = (msg_type == MSG_LOGIN) ? MSG_LOGIN_SEALED : MSG_REGISTER_SEALED;
+
 
     /* create the socket, build the address (loopback, PORT) and connect.On any failure: perror(...), free(payload), return 1.*/
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if(fd<0){
 	    perror("socket");
-	    free(payload);
 	    return 1;
     }
     struct sockaddr_in server_addr;
@@ -67,22 +59,15 @@ int main(int argc, char *argv[])
 
     if(connect(fd, (struct sockaddr *)&server_addr, sizeof(server_addr))<0){
 	    perror("connect");
-	    free(payload);
 	    close(fd);
 	    return 1;
     }
-
-
 
     /* send the frame. */
-    int rc = send_frame(fd, msg_type, payload, (uint32_t)total);
-    free(payload);
-    if(rc == -1){
-	    printf("send_frame: failed\n");
+    if(send_sealed_auth(fd, sealed_type, username, password, server_pk) == -1){
 	    close(fd);
 	    return 1;
     }
-
     /* read the reply. */
     uint8_t type;
     uint8_t *reply;
