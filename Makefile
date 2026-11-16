@@ -11,6 +11,7 @@ LDLIBS	= -ldl -lm $(SODIUM_LIBS)
 
 
 BUILD	= build
+$(shell mkdir -p $(BUILD))
 
 SERVER_OBJS = $(BUILD)/server.o $(BUILD)/net_io.o $(BUILD)/db.o $(BUILD)/auth.o $(BUILD)/registry.o $(BUILD)/conn.o
 CLIENT_OBJS = $(BUILD)/client.o $(BUILD)/net_io.o $(BUILD)/keys.o $(BUILD)/msgcrypt.o $(BUILD)/sealedauth.o
