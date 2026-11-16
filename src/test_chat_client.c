@@ -6,6 +6,9 @@
 #include <netinet/in.h>
 #include "net_io.h"
 #include "protocol.h"
+#include "keys.h"
+#include "msgcrypt.h"
+#include "sealedauth.h"
 
 #define PORT 5555
 
@@ -48,25 +51,21 @@ static int request(int fd, uint8_t type, const uint8_t *payload, uint32_t len){
 	return rtype;
 }
 
-/* Logs in. Returns 0 on success, -1 on failure. */
-static int login(int fd, const char *user, const char *pass)
-{
-    size_t u = strlen(user);
-    size_t p = strlen(pass);
-    size_t total = u + 1 + p + 1;
-    if (total > MAX_PAYLOAD)
-        return -1;
+/* Logs in with a sealed login. Returns 0 on success, -1 on failure. */
+static int login(int fd, const char *user, const char *pass, const uint8_t server_pk[crypto_box_PUBLICKEYBYTES]){
 
-    uint8_t *buf = malloc(total);
-    if (buf == NULL)
-        return -1;
+	if(send_sealed_auth(fd, MSG_LOGIN_SEALED, user, pass, server_pk) == -1)
+		return -1;
+	uint8_t rtype;
+	uint8_t *reply;
+	uint32_t rlen;
 
-    memcpy(buf, user, u + 1);          /* includes the 00 */
-    memcpy(buf + u + 1, pass, p + 1);  /* includes the 00 */
-
-    int t = request(fd, MSG_LOGIN, buf, (uint32_t)total);
-    free(buf);
-    return (t == MSG_OK) ? 0 : -1;
+	/* read the reply and print it in the same format as request() */
+	if(recv_frame(fd, &rtype, &reply, &rlen) == -1)
+		return -1;
+	printf("reply: type=%u text=\"%.*s\"\n", rtype, (int)rlen,reply ? (char *)reply : "");
+	free(reply);
+	return (rtype == MSG_OK) ? 0 : -1;
 }
 
 /* Sends one message. Returns 0 on success, -1 on failure. */
@@ -131,11 +130,19 @@ int main(int argc, char *argv[])
 	    return 1;
     }
 
+    if(sodium_init() < 0){
+	    fprintf(stderr, "libsodium failed to initialize\n");
+	    return 1;
+    }
+    uint8_t server_pk[crypto_box_PUBLICKEYBYTES];
+    if(keys_load_server_pk(server_pk) == -1)
+	    return 1;
+
     int fd = connect_server();
     if (fd == -1)
         return 1;
 
-    if (login(fd, argv[2], argv[3]) == -1) {
+    if (login(fd, argv[2], argv[3], server_pk) == -1) {
         close(fd);
         return 1;
     }
