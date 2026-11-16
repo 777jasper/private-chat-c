@@ -144,7 +144,7 @@ static void cache_put(chat_ctx_t *ctx, const char *name, const unsigned char *pk
 
 /* Prints a key as hex. note is "" or " (cached)". */
 static void print_key(const char *name, const unsigned char *pk, const char *note){
-	printf("key for %s:", name);
+	printf("key for %s: ", name);
 	for(size_t i = 0; i<crypto_box_PUBLICKEYBYTES; i++)
 		printf("%02x", pk[i]);
 	printf("%s\n", note);

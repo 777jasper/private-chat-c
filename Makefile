@@ -14,12 +14,13 @@ BUILD	= build
 
 SERVER_OBJS = $(BUILD)/server.o $(BUILD)/net_io.o $(BUILD)/db.o $(BUILD)/auth.o $(BUILD)/registry.o $(BUILD)/conn.o
 CLIENT_OBJS = $(BUILD)/client.o $(BUILD)/net_io.o $(BUILD)/keys.o $(BUILD)/msgcrypt.o $(BUILD)/sealedauth.o
+SHARED_CLIENT_OBJS = $(BUILD)/net_io.o $(BUILD)/msgcrypt.o $(BUILD)/sealedauth.o $(BUILD)/keys.o
 
 SQLITE_DIR = deps/sqlite/sqlite-amalgamation-3540100
 SQLITE_OBJ = $(BUILD)/sqlite3.o
 
 
-all: $(BUILD)/server $(BUILD)/client
+all: $(BUILD)/server $(BUILD)/client $(BUILD)/test_register_client $(BUILD)/test_chat_client
 
 $(BUILD)/server: $(SERVER_OBJS) $(SQLITE_OBJ)
 	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
@@ -59,6 +60,20 @@ $(BUILD)/sealedauth.o: src/client/sealedauth.c src/client/sealedauth.h src/clien
 	$(CC) $(CFLAGS) $(SODIUM_CFLAGS) -c $< -o $@
 
 
+$(BUILD)/test_register_client: $(BUILD)/test_register_client.o $(SHARED_CLIENT_OBJS)
+	$(CC) $(LDFLAGS) $^ $(SODIUM_LIBS) -o $@
+
+$(BUILD)/test_register_client.o: src/test_register_client.c src/common/net_io.h src/common/protocol.h src/client/keys.h src/client/msgcrypt.h src/client/sealedauth.h
+	$(CC) $(CFLAGS) $(SODIUM_CFLAGS) -Isrc/client -c $< -o $@
+
+
+$(BUILD)/test_chat_client: $(BUILD)/test_chat_client.o $(SHARED_CLIENT_OBJS)
+	$(CC) $(LDFLAGS) $^ $(SODIUM_LIBS) -o $@
+
+$(BUILD)/test_chat_client.o: src/test_chat_client.c src/common/net_io.h src/common/protocol.h src/client/keys.h src/client/msgcrypt.h src/client/sealedauth.h
+	$(CC) $(CFLAGS) $(SODIUM_CFLAGS) -Isrc/client -c $< -o $@
+
+
 
 $(SQLITE_OBJ): $(SQLITE_DIR)/sqlite3.c $(SQLITE_DIR)/sqlite3.h
 	$(CC) -O2 -pthread -DSQLITE_THREADSAFE=1 -c $< -o $@
@@ -68,9 +83,10 @@ sqlite: $(SQLITE_OBJ)
 
 
 clean:
-	rm -f $(BUILD)/server $(SERVER_OBJS) $(BUILD)/client $(BUILD)/client.o $(BUILD)/keys.o $(BUILD)/msgcrypt.o $(BUILD)/sealedauth.o
+	rm -f $(BUILD)/server $(SERVER_OBJS) $(BUILD)/client $(BUILD)/client.o $(BUILD)/keys.o $(BUILD)/msgcrypt.o $(BUILD)/sealedauth.o $(BUILD)/client $(BUILD)/test_register_client $(BUILD)/test_chat_client $(BUILD)/test_register_client.o $(BUILD)/test_chat_client.o
+
 
 clean-all: 
-	rm -f $(BUILD)/server $(BUILD)/*.o
+	rm -f $(BUILD)/server $(BUILD)/*.o $(BUILD)/client $(BUILD)/test_register_client $(BUILD)/test_chat_client
 
 .PHONY: all clean clean-all sqlite
