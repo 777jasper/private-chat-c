@@ -459,11 +459,7 @@ static void handle_client(conn_t *c){
 
 		int rc;
 		switch(type){
-			case MSG_REGISTER: rc = handle_register(c, payload, len);
-					   break;
 			
-			case MSG_LOGIN: rc = handle_login(c, payload, len, &sess);
-					break;
 			case MSG_SEND:	rc = handle_send(c, payload, len, &sess);
 					break;
 			case MSG_SET_KEY: rc = handle_set_key(c, payload, len, &sess);
