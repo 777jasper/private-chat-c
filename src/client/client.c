@@ -455,11 +455,60 @@ static int chat_loop(chat_ctx_t *ctx){
 	}
 }
 
+/* Asks the server for a challenge, seals it together with the credentials 
+ * and sends the sealed frame. Returns 0 on success, -1 on failure. */
+static int send_sealed_auth(int fd, uint8_t sealed_type,const char *user, const char *pass,
+		const uint8_t server_pk[crypto_box_PUBLICKEYBYTES]){
+	/* ask for a challenge */
+	if(send_frame(fd, MSG_CHALLENGE_REQ, NULL, 0) == -1){
+		fprintf(stderr, "could not request a challenge\n");
+		return -1;
+	}
+	uint8_t  type;
+	uint8_t *ch;
+	uint32_t ch_len;
+
+	/* receive it and check it is what we expect */
+	if (recv_frame(fd, &type, &ch, &ch_len) == -1) {
+		fprintf(stderr, "no challenge from server\n");
+		return -1;
+	}
+	if(type != MSG_CHALLENGE || ch_len != MSGCRYPT_CHALLENGE_SIZE){
+		free(ch);
+		fprintf(stderr, "unexpected reply to challenge request\n");
+		return -1;
+	}
+	uint8_t *sealed;
+	size_t   sealed_len;
+
+	/* seal, then free the challenge whatever happened */
+	int rc = msgcrypt_seal_credentials(ch, user, pass, server_pk, &sealed, &sealed_len);
+	free(ch);
+	if(rc == -1){
+		fprintf(stderr, "could not encrypt the login\n");
+		return -1;
+	}
+
+	/* send it, free it, report the result */
+	rc = send_frame(fd, sealed_type, sealed, (uint32_t)sealed_len);
+	free(sealed);
+	return (rc == 0) ? 0 : -1;
+}
+
 int main(void)
 {
     char command[USER_BUF];
     char username[USER_BUF];
     char password[PASS_BUF];
+
+    if(sodium_init() < 0){
+	    fprintf(stderr, "libsodium failed to initialize\n");
+	    return 1;
+    }
+    uint8_t server_pk[crypto_box_PUBLICKEYBYTES];
+    if(keys_load_server_pk(server_pk) == -1)
+	    return 1;
+
 
     /* read the three values */
     if(read_line("Command (register/login): ", command, sizeof command) == -1 ||
@@ -479,47 +528,18 @@ int main(void)
 	    return 1;
     }
 
-    /* build the payload "username 00 password 00" in malloc'd buffer(size u_len + 1 + p_len + 1) */
-    size_t u_len = strlen(username);
-    size_t p_len = strlen(password);
-    size_t total = u_len + 1 + p_len +1;
+    uint8_t sealed_type = (msg_type == MSG_LOGIN) ? MSG_LOGIN_SEALED : MSG_REGISTER_SEALED;
 
-    if(total > MAX_PAYLOAD){
-	    fprintf(stderr, "input too long\n");
-	    explicit_bzero(password, sizeof password);
-	    return 1;
-    }
-
-    uint8_t *payload = malloc(total);
-    if(payload == NULL){
-	    explicit_bzero(password, sizeof password);
-	    perror("malloc");
-	    return 1;
-    }
-
-    /* copy the username including its 00 into the start of payload */
-    memcpy(payload, username, u_len + 1);
-
-    /* copy the password including its 00 right after it */
-    memcpy(payload + u_len + 1, password, p_len + 1);
-
-    /* wipe the password as soon as it has been copied */
-    explicit_bzero(password, sizeof password);
 
     /* connect */
     int fd = connect_server();
     if(fd == -1){
-	    explicit_bzero(payload, total); /* it still holds the password */
-	    free(payload);
+	    explicit_bzero(password, sizeof password);
 	    return 1;
     }
-
-    /* send, then wipe and free the payload on EVERY outcome */
-    int rc = send_frame(fd, msg_type, payload, (uint32_t)total);
-    explicit_bzero(payload, total);
-    free(payload);
-    if(rc == -1){
-	    fprintf(stderr, "send failed\n");
+    int arc = send_sealed_auth(fd, sealed_type, username, password, server_pk);
+    explicit_bzero(password, sizeof password); /* wipe on EVERY outcome */
+    if(arc == -1){
 	    close(fd);
 	    return 1;
     }
@@ -570,6 +590,8 @@ int main(void)
 	    close(fd);
 	    return (chat_rc == 0) ? 0 : 1;
     }
+
+
 
     close(fd);
     return (type == MSG_OK) ? 0 : 1;
