@@ -54,7 +54,7 @@ If libsodium is installed system-wide, `env.sh` is not needed.
     source ./env.sh
     make --warn-undefined-variables
 
-This builds `build/server`, `build/client`, and two test tools. `make clean` removes your own object files and keeps the slow-to-build `sqlite3.o`; `make clean-all` removes everything.
+This creates the `build/` folder and builds `build/server`, `build/client`, and two test tools. `make clean` removes your own object files and keeps the slow-to-build `sqlite3.o`; `make clean-all` removes everything.
 
 ## Run
 
@@ -63,7 +63,7 @@ Start the server from the project folder. It uses the relative path `data/chat.d
     source ./env.sh
     ./build/server
 
-It listens on `127.0.0.1:5555` only. On first start it creates:
+It listens on `127.0.0.1:5555` only. On first start, it creates the `data/` folder (mode 700) and, inside it:
 
 - `data/chat.db`: the SQLite database (users, public keys, encrypted messages)
 - `data/server.key`: the server's secret key (mode 600; never share or commit it)
@@ -73,6 +73,8 @@ Each client machine needs a copy of the server's public key. Copy it once, by ha
 
     mkdir -p ~/.chatapp
     cp data/server.pub ~/.chatapp/server.pub
+
+The client always reads `~/.chatapp/server.pub`. If you run more than one copy of the server on the same machine (for example to test a fresh checkout), each copy has its own key, so start that client with a different home folder, for example `HOME=$HOME/fresh-home ./build/client`, and copy that server's `data/server.pub` into `fresh-home/.chatapp/`. Otherwise the copy overwrites the key the other server needs, and logins fail with `invalid username or password`.
 
 The client does not fetch this key over the network, because a man in the middle could substitute their own.
 
