@@ -1,11 +1,10 @@
-# env.sh - our "activate" script for the local libraries
+# env.sh - source this file from bash:  source ./env.sh
+# It finds its own folder, so the project can live anywhere.
 
-CHATAPP_DEPS=$HOME/Documents/TCP/chatapp/deps
+CHATAPP_DEPS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deps"
 
-# TODO 1: tell pkg-config where libsodium.pc lives.
-# Look at your last ls output: which folder inside $CHATAPP_DEPS holds libsodium.pc?
-export PKG_CONFIG_PATH=$CHATAPP_DEPS/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}
+# Where pkg-config finds libsodium.pc (lib64 on openSUSE, lib on some systems)
+export PKG_CONFIG_PATH="$CHATAPP_DEPS/lib64/pkgconfig:$CHATAPP_DEPS/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
-# TODO 2: tell Linux where libsodium.so lives at run time.
-# Which folder inside $CHATAPP_DEPS holds libsodium.so?
-export LD_LIBRARY_PATH=$CHATAPP_DEPS/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+# Where Linux finds libsodium.so when a program runs
+export LD_LIBRARY_PATH="$CHATAPP_DEPS/lib64:$CHATAPP_DEPS/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
