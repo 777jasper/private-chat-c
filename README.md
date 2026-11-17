@@ -34,7 +34,14 @@ Run these from the project folder.
     make -j"$(nproc)" && make install
     cd "$PROJECT"
 
-Download the SQLite amalgamation zip from https://www.sqlite.org/download.html and unpack it so that the files are at `deps/sqlite/sqlite-amalgamation-3540100/`. If your version number differs, change `SQLITE_DIR` in the `Makefile`.
+Download the SQLite amalgamation and unpack it (still from the project folder):
+
+    mkdir -p deps/sqlite && cd deps/sqlite
+    curl -LO https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip
+    unzip sqlite-amalgamation-3540100.zip
+    cd "$PROJECT"
+
+The zip is 2990966 bytes. Check its SHA3-256 with `openssl dgst -sha3-256 <file>`; it should be `92281c86e2957f9b9305890f9ac04204caa7b677cc868dc326d942689df28e30`. If `unzip` is missing, use `python3 -m zipfile -e sqlite-amalgamation-3540100.zip .`. To use a different version, change `SQLITE_DIR` in the `Makefile` to match the folder name.
 
 `env.sh` points `pkg-config` and the run-time loader at `deps/`. It contains an absolute path, so edit `CHATAPP_DEPS` in it for your machine. Run it in every new terminal:
 
