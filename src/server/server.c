@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <sys/stat.h>      /* mkdir */
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -526,7 +527,20 @@ static void *client_thread(void *arg){
 	return NULL;
 }
 
+/* Make sure the data folder exists. Returns 0 if it does, -1 on failure */
+static int ensure_data_dir(void){
+
+	if(mkdir("data", 0700) == -1 && errno != EEXIST){
+		perror("server: cannot create data/");
+		return -1;
+	}
+	return 0;
+}
+
 int main(void){
+
+	if(ensure_data_dir() == -1)
+		return 1;
 
 	/* open the database. */
 	if(db_init("data/chat.db") == -1){
